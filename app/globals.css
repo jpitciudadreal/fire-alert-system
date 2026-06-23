@@ -1,26 +1,115 @@
 @import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* -------------------------------------------------------------------------- */
+/*                            Theme tokens (Tailwind v4)                      */
+/* -------------------------------------------------------------------------- */
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+
+  --color-ember-50: oklch(0.97 0.02 50);
+  --color-ember-100: oklch(0.92 0.05 50);
+  --color-ember-200: oklch(0.85 0.10 50);
+  --color-ember-300: oklch(0.78 0.16 45);
+  --color-ember-400: oklch(0.71 0.21 40);
+  --color-ember-500: oklch(0.65 0.24 35);
+  --color-ember-600: oklch(0.59 0.25 30);
+  --color-ember-700: oklch(0.52 0.23 28);
+  --color-ember-800: oklch(0.42 0.18 26);
+  --color-ember-900: oklch(0.32 0.13 24);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
+:root {
+  --background: #0a0a0b;
+  --foreground: #ededed;
+}
+
+@media (prefers-color-scheme: light) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #fafafa;
+    --foreground: #18181b;
   }
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Leaflet overrides                             */
+/* -------------------------------------------------------------------------- */
+
+.leaflet-container {
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-tooltip {
+  background: #fafafa;
+  color: #18181b;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.leaflet-popup-tip,
+.leaflet-tooltip-top:before {
+  background: #fafafa;
+}
+
+.leaflet-control-attribution {
+  background: rgba(9, 9, 11, 0.6) !important;
+  color: #d4d4d8 !important;
+  font-size: 10px !important;
+  backdrop-filter: blur(6px);
+  padding: 2px 6px !important;
+  border-radius: 6px !important;
+}
+
+.leaflet-control-attribution a {
+  color: #fb923c !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Tailwind animations                            */
+/* -------------------------------------------------------------------------- */
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Custom scrollbar so the dark surface feels intentional */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(161, 161, 170, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(161, 161, 170, 0.45);
 }

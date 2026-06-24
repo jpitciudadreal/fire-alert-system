@@ -1,6 +1,7 @@
 import {
   createSupabaseServerClient,
 } from "@/lib/supabase/server";
+import { createSupabaseServiceRoleClient } from "@/lib/supabase/service-role";
 import { getProvince } from "@/lib/provinces";
 import { makeToken, verifyToken } from "@/lib/unsubscribe-token";
 import type { Subscription } from "@/types";
@@ -200,9 +201,13 @@ export async function DELETE(request: Request): Promise<Response> {
     return Response.json({ error: "Token inválido." }, { status: 403 });
   }
 
-  const supabase = await createSupabaseServerClient();
+  // HMAC verified → safe to use the privileged service-role client.
+  // The public DELETE policy on `subscriptions` is closed (`using(false)`)
+  // to prevent anon-key enumeration of UUIDs, so the regular anon-key
+  // client would be rejected. Service-role bypasses RLS, which is fine
+  // because we already enforced ownership via the HMAC signature here.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sb = supabase as any;
+  const sb = createSupabaseServiceRoleClient() as any;
   const { error } = await sb
     .from("subscriptions")
     .delete()

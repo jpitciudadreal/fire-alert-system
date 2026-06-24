@@ -15,12 +15,19 @@
 //     don't share a module graph.
 //
 // Required secrets (set with `supabase secrets set`):
+//   CRON_SECRET            — Bearer used by pg_cron to invoke this
+//                            function. Mirror it in Supabase Vault under
+//                            name `cron_secret` so pg_cron can read it
+//                            via `vault.decrypted_secrets`.
 //   FIRMS_API_KEY          — NASA FIRMS map key
 //   RESEND_API_KEY         — Resend API key
 //   RESEND_FROM            — Sender identity, e.g. "Fire Alert <noreply@firealerts.app>"
 //   FIRM_ALERTS_BASE_URL   — Public app URL for the dashboard link in
 //                            emails. Defaults to http://localhost:3000.
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY — auto-injected by Supabase.
+//                            Used internally to talk to the DB; NOT used
+//                            for caller auth (that role belongs to
+//                            CRON_SECRET).
 // =====================================================================
 
 const FIRMS_SOURCE = "VIIRS_SNPP_NRT";
@@ -66,6 +73,8 @@ interface SubscriptionRow {
 }
 
 interface AlertRunSummary {
+  /** Random UUID for cross-referencing this invocation's logs and metrics. */
+  run_id: string;
   ok: boolean;
   /** True when the run fired at least one email AND also hit errors. */
   partial: boolean;
@@ -538,7 +547,9 @@ async function sendEmail(
 
 Deno.serve(async (req: Request) => {
   const startedAt = Date.now();
+  const runId = crypto.randomUUID();
   const summary: AlertRunSummary = {
+    run_id: runId,
     ok: false,
     partial: false,
     fetched_fires: 0,
@@ -552,14 +563,48 @@ Deno.serve(async (req: Request) => {
     duration_ms: 0,
   };
 
-  // ---- Auth: require service-role bearer ----
-  const expected = `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""}`;
-  if (req.headers.get("Authorization") !== expected) {
+  // ---- Auth: require CRON_SECRET bearer ----
+  // The pg_cron job injects this via Supabase Vault → pg_net → header
+  // (see supabase/cron.sql). We deliberately do NOT accept the
+  // service-role key here — service-role has project-wide RLS bypass,
+  // so rotating it for a cron-scheduling concern would be
+  // unnecessarily invasive. CRON_SECRET lives in two places (Edge
+  // Function secrets + Vault) and can be rotated independently.
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  if (!cronSecret) {
+    console.error("[check-fires] CRON_SECRET env not set; refusing to start");
+    return new Response("Service misconfigured", { status: 500 });
+  }
+  if (req.headers.get("Authorization") !== `Bearer ${cronSecret}`) {
     return new Response("Unauthorized", { status: 401 });
   }
 
   if (req.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
+  }
+
+  // ---- Validate remaining envs BEFORE doing any real work ----
+  // Fail fast with a deterministic payload so dashboard monitoring can
+  // alert on misconfigured deployments without having to fish through
+  // each error stage separately.
+  const requiredEnvs = [
+    "FIRMS_API_KEY",
+    "RESEND_API_KEY",
+    "RESEND_FROM",
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+  ] as const;
+  const missingEnvs = requiredEnvs.filter((k) => !Deno.env.get(k));
+  if (missingEnvs.length > 0) {
+    summary.errors.push({
+      stage: "env_validation",
+      message: `Missing env(s): ${missingEnvs.join(", ")}`,
+    });
+    summary.duration_ms = Date.now() - startedAt;
+    console.error(
+      `[check-fires][${runId}] refusing to run: ${summary.errors[0].message}`,
+    );
+    return jsonResponse(summary);
   }
 
   try {
@@ -641,7 +686,7 @@ Deno.serve(async (req: Request) => {
 
         summary.emails_sent += 1;
         console.log(
-          `[check-fires] sent digest to ${sub.email}: ${newFires.length} fire(s) in ${sub.province_slug}`
+          `[check-fires][${runId}] sent digest to ${sub.email}: ${newFires.length} fire(s) in ${sub.province_slug}`
         );
       } catch (err) {
         summary.errors.push({

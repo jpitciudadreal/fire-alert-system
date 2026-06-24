@@ -2,32 +2,60 @@
 -- Fire Alert – pg_cron schedule for the `check-fires` Edge Function
 -- =========================================================================
 -- Run this in the Supabase SQL editor AFTER:
---   1. Deploying the Edge Function (`supabase functions deploy check-fires`)
---   2. Setting the Edge Function secret `app.functions_secret` to a
---      strong random string (`supabase secrets set app.functions_secret=…`)
---   3. Replacing `<project-ref>` below with your Supabase project ref
---      (the subdomain in your project URL, e.g. `abcdefghij` from
---      `https://abcdefghij.supabase.co`).
+--   1. Deploying the Edge Function:        supabase functions deploy check-fires
+--   2. Configuring Edge Function secrets:
+--        supabase secrets set CRON_SECRET=<strong-random-string>
+--        supabase secrets set FIRMS_API_KEY=<map-key-from-firms.modaps.eosdis.nasa.gov>
+--        supabase secrets set RESEND_API_KEY=<resend-api-key>
+--        supabase secrets set RESEND_FROM='Fire Alert <noreply@firealerts.app>'
+--   3. Mirroring the CRON_SECRET in Supabase Vault so pg_cron can read it:
+--        select vault.create_secret(
+--          '<strong-random-string>',  -- must equal the Edge Function secret
+--          'cron_secret',
+--          'Bearer used by pg_cron to invoke the check-fires Edge Function'
+--        );
+--   4. Replacing `<project-ref>` below with your Supabase project ref
+--      (Dashboard → Project Settings → General → Reference ID, e.g.
+--      `abcdefghij` from `https://abcdefghij.supabase.co`).
 --
--- Requires the `pg_cron` and `pg_net` extensions. Enable them in
+-- Requires `pg_cron` and `pg_net` extensions. Enable them in
 -- Dashboard → Database → Extensions if they aren't already.
 -- =========================================================================
 
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 
--- Register the shared secret the below cron job will use to talk to the
--- Edge Function. MUST match the secret you set on the Edge Function
--- runtime (`supabase secrets set app.functions_secret=…`). Skip this
--- line if you've already configured it.
+-- ------------------------------------------------------------------------
+-- Idempotent reschedule: drop the existing job if present.
 --
--- alter database postgres set app.functions_secret = '<strong-random-string>';
+-- cron.unschedule(name text) returns void and raises a warning if the
+-- job does not exist, so we wrap the call in a DO block guarded by an
+-- existence check. (The previous form
+--   `select cron.unschedule('…') where exists (…)` was a hard syntax
+--   error — `select cron.fn() where …` is not valid SQL because pg_cron
+--   doesn't return a relation.)
+-- ------------------------------------------------------------------------
+do $$
+begin
+  if exists (select 1 from cron.job where jobname = 'check-new-fires') then
+    perform cron.unschedule('check-new-fires');
+  end if;
+end $$;
 
--- Idempotent: drop the existing job first if you already registered one.
-select cron.unschedule('check-new-fires') where exists (
-  select 1 from cron.job where jobname = 'check-new-fires'
-);
-
+-- ------------------------------------------------------------------------
+-- Schedule the cron job.
+--
+-- `vault.decrypted_secrets` decrypts on read; the only row matching
+-- `name = 'cron_secret'` is the one we created above. Rotating the
+-- secret means updating both `supabase secrets` AND `vault.create_secret`
+-- (or rotating the existing Vault secret with `vault.rotate_secret` on
+-- Supabase managed Vaults).
+--
+-- `timeout_milliseconds` makes net.http_post give up after 5 s instead
+-- of spilling into request queues if the Edge Function is unreachable
+-- (a frozen function would otherwise silently accumulate rows in
+-- `net._http_response`).
+-- ------------------------------------------------------------------------
 select cron.schedule(
   'check-new-fires',
   '*/15 * * * *', -- every 15 minutes
@@ -36,15 +64,39 @@ select cron.schedule(
       url     := 'https://<project-ref>.supabase.co/functions/v1/check-fires',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
-        'Authorization', 'Bearer ' || current_setting('app.functions_secret', true)
+        'Authorization', 'Bearer ' || (
+          select decrypted_secret
+          from vault.decrypted_secrets
+          where name = 'cron_secret'
+        )
       ),
-      body    := '{}'::jsonb
+      body    := '{}'::jsonb,
+      timeout_milliseconds := 5000
     );
   $$
 );
 
--- Inspect:
--- select * from cron.job where jobname = 'check-new-fires';
-
--- Optional: rotate the secret (run after rotating `app.functions_secret`):
--- alter database postgres set app.functions_secret = '<new-value>';
+-- ------------------------------------------------------------------------
+-- Inspect / debug
+-- ------------------------------------------------------------------------
+-- View registered jobs:
+--   select * from cron.job where jobname = 'check-new-fires';
+--
+-- View recent net.http_post activity (Supabase pg_net):
+--   select id, status, created_at, headers
+--   from net._http_response
+--   order by created_at desc
+--   limit 20;
+--
+-- Manually invoke the Edge Function once (useful for dry runs):
+--   select net.http_post(
+--     url     := 'https://<project-ref>.supabase.co/functions/v1/check-fires',
+--     headers := jsonb_build_object(
+--       'Content-Type', 'application/json',
+--       'Authorization', 'Bearer ' || (
+--         select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret'
+--       )
+--     ),
+--     body    := '{}'::jsonb,
+--     timeout_milliseconds := 5000
+--   );

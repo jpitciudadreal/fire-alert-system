@@ -123,23 +123,21 @@ create policy "subscriptions_insert_public"
   on public.subscriptions for insert
   with check (true);
 
--- Borrado: la única forma segura sin auth es mediante token HMAC unario
--- entregado por email. Validamos el token en el código de la API route
--- `/api/subscribe` antes de hacer el DELETE en nombre del cliente.
--- (RLS podría denegar el DELETE público; el flujo real llama con
--- service-role desde la route handler, que se salta RLS.)
--- Mantenemos una policy permisiva por si en el futuro el cliente valida
--- el token localmente:
+-- DELETE/UPDATE público cerrado: la única forma segura de borrar o
+-- mutar una suscripción es a través de la API route `/api/subscribe`,
+-- que usa el cliente SERVICE-ROLE (que bypasea RLS) y verifica el HMAC
+-- del unsubscribe_token antes de tocar la fila. Una policy `using(true)`
+-- en DELETE/UPDATE abierta dejaba la puerta abierta a un atacante con
+-- la anon key pública a iterar UUIDs y borrar/modificar suscripciones
+-- ajenas — el blindaje contra ese escenario es exactamente esto.
 create policy "subscriptions_delete_token"
   on public.subscriptions for delete
-  using (true);
+  using (false);
 
--- Update abierto (mismo razonamiento): para que el cliente pueda
--- marcar `confirmed=true` después del email de opt-in.
 create policy "subscriptions_update_owner"
   on public.subscriptions for update
-  using (true)
-  with check (true);
+  using (false)
+  with check (false);
 
 -- -------------------------------------------------------------------------
 -- Alert history: lectura pública cuando la sub padre está confirmada.

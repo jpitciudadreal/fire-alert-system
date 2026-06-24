@@ -90,6 +90,10 @@ interface ServerMockClient {
   auth: {
     getUser: () => Promise<{ data: { user: null }; error: null }>;
     getSession: () => Promise<{ data: { session: null }; error: null }>;
+    // No-op in demo mode: there's no session cookie to clear. Mirrors
+    // the browser mock so route handlers (signout endpoint, etc.) can
+    // typecheck against the union and the union handler without casts.
+    signOut: () => Promise<{ error: null }>;
   };
   from: (_table: string) => ServerBuilder<unknown>;
 }
@@ -99,6 +103,7 @@ function createServerMockClient(): ServerMockClient {
     auth: {
       getUser: async () => ({ data: { user: null }, error: null }),
       getSession: async () => ({ data: { session: null }, error: null }),
+      signOut: async () => ({ error: null }),
     },
     from: () => makeServer([]),
   };

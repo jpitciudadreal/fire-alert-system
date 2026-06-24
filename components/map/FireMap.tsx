@@ -11,7 +11,7 @@ import {
 import type { FirePoint } from "@/types";
 import { Badge } from "@/components/ui/Badge";
 
-interface FireMapProps {
+export interface FireMapProps {
   fires: FirePoint[];
   height?: number;
   initialCenter?: [number, number];

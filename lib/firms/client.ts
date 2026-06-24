@@ -210,6 +210,33 @@ function normalizeConfidence(raw: string | undefined): ConfidenceLevel {
   return "nominal";
 }
 
+/**
+ * FIRMS reports acquisition time as HHMM in UTC. Some upstreams or
+ * partial CSV rows omit the leading digit (e.g. "134" instead of
+ * "0134"), so safe-render to canonical `HH:MM` by left-padding to
+ * four characters before slicing.
+ *
+ *   - Empty input renders `""` so a bad row doesn't print "00:00"
+ *     by mistake. Callers that wrap the result with a date
+ *     separator or timezone suffix are responsible for handling
+ *     the empty case (e.g. dropping the ` ·  UTC` block).
+ *   - Inputs longer than 4 chars are silently truncated to the
+ *     first 4 digits ("12345" → "12:34"). Defensible convention
+ *     if upstream FIRMS ever widens the format; flag in the PR
+ *     description if you intentionally rely on this.
+ */
+export function formatAcqTime(acqTime: string | undefined): string {
+  if (!acqTime) return "";
+  // Strip non-digits before padding so upstream rows that sneak in a
+  // colon separator (e.g. "12:45") don't truncate a digit on the way
+  // to canonical HH:MM — `padStart` only adds when the string is
+  // shorter, so without this an input like "12:45" → slice(0,4) → "12:4"
+  // and the colon ends up landing one digit to the left of where it
+  // was. Defensive against accidental upstream changes.
+  const digits = acqTime.replace(/\D/g, "").padStart(4, "0").slice(0, 4);
+  return `${digits.slice(0, 2)}:${digits.slice(2, 4)}`;
+}
+
 /** Attach the province slug to each fire point using the bounding boxes */
 function enrichProvince(fire: FirePoint): FirePoint {
   if (fire.province) return fire;

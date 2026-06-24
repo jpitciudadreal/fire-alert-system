@@ -10,6 +10,7 @@ import {
 } from "react-leaflet";
 import type { FirePoint } from "@/types";
 import { Badge } from "@/components/ui/Badge";
+import { formatAcqTime } from "@/lib/firms/client";
 
 export interface FireMapProps {
   fires: FirePoint[];
@@ -90,8 +91,7 @@ export default function FireMap({
                     {fire.latitude.toFixed(3)}, {fire.longitude.toFixed(3)}
                   </div>
                   <div className="text-zinc-600">
-                    {fire.acq_date} · {fire.acq_time.slice(0, 2)}:
-                    {fire.acq_time.slice(2)} UTC
+                    {fire.acq_date} · {formatAcqTime(fire.acq_time)} UTC
                   </div>
                   <div className="text-zinc-600">
                     Brillo: {fire.brightness.toFixed(1)} K
@@ -111,7 +111,8 @@ export default function FireMap({
                     {fire.longitude.toFixed(4)}
                   </div>
                   <div>
-                    <strong>Fecha:</strong> {fire.acq_date} · {fire.acq_time}
+                    <strong>Fecha:</strong> {fire.acq_date} ·{" "}
+                    {formatAcqTime(fire.acq_time)} UTC
                   </div>
                   <div>
                     <strong>Intensidad:</strong> {fire.brightness.toFixed(1)} K

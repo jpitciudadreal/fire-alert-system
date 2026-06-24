@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/Badge";
+import { formatAcqTime } from "@/lib/firms/client";
 import type { FirePoint } from "@/types";
 
 interface FireListProps {
@@ -73,8 +74,8 @@ export function FireList({
               Kept as the lowest-emphasis line.
             */}
             <div className="text-xs text-zinc-500">
-              {fire.acq_date} · {fire.acq_time.slice(0, 2)}:
-              {fire.acq_time.slice(2)} UTC · brillo {fire.brightness.toFixed(1)}K
+              {fire.acq_date} · {formatAcqTime(fire.acq_time)} UTC · brillo{" "}
+              {fire.brightness.toFixed(1)}K
             </div>
           </div>
           <a

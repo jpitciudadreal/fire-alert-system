@@ -365,8 +365,17 @@ const CONFIDENCE_TONE = {
 
 function renderFireRow(fire: Fire): string {
   const tone = CONFIDENCE_TONE[fire.confidence];
-  const hh = fire.acq_time.slice(0, 2);
-  const mm = fire.acq_time.slice(2, 4);
+  // TODO: consolidate with `formatAcqTime` in lib/firms/client.ts.
+  // Deno Edge Functions can't import from the Next.js module graph
+  // (see the file header) so the helper is inlined here. If the two
+  // implementations ever drift, the email digest will render
+  // differently from the React UI — keep the semantics in sync.
+  const paddedTime = (fire.acq_time ?? "")
+    .replace(/\D/g, "")
+    .padStart(4, "0")
+    .slice(0, 4);
+  const hh = paddedTime.slice(0, 2);
+  const mm = paddedTime.slice(2, 4);
   return `
     <tr>
       <td style="padding: 14px 16px; border-top: 1px solid #27272a;">

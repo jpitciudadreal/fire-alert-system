@@ -67,11 +67,8 @@ export default async function HomePage() {
       ) : null}
 
       <div className="grid min-w-0 flex-1 gap-6 lg:grid-cols-[1fr_360px]">
-        <section className="order-2 min-w-0 min-h-[420px] lg:order-1 lg:min-h-[600px]">
+        <section className="order-1 flex min-w-0 flex-col gap-6">
           <MapShell fires={fires} height={620} />
-        </section>
-
-        <aside className="order-1 flex min-w-0 flex-col gap-4 lg:order-2">
           <Card>
             <CardHeader
               title={
@@ -108,7 +105,9 @@ export default async function HomePage() {
               </Link>
             </div>
           </Card>
+        </section>
 
+        <aside className="order-2 flex min-w-0 flex-col">
           <Card>
             <CardHeader
               title="Últimos focos"

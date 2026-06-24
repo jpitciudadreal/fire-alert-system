@@ -7,10 +7,14 @@ import { useState } from "react";
 import { useSupabase } from "@/components/Providers";
 import { useToast } from "@/components/Providers";
 import { Field, Input } from "@/components/ui/Field";
-import { Button } from "@/components/ui/Button";
 import { loginSchema, type LoginInput } from "@/types";
 import { isSupabaseConfigured } from "@/types";
 
+/**
+ * LoginForm — mismas validaciones que la versión original, ahora con
+ * inputs/buttons alineados al tema dark fire (border-base, focus-fire,
+ * etc.). Mantiene la lógica de Supabase intacta.
+ */
 export function LoginForm() {
   const router = useRouter();
   const supabase = useSupabase();
@@ -40,11 +44,11 @@ export function LoginForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
       {!supabaseReady ? (
-        <div className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-3 text-sm text-orange-100">
+        <div className="rounded-xl border border-amber/30 bg-amber/5 px-4 py-3 text-sm text-amber">
           Supabase no está configurado. Añade las claves en{" "}
-          <code className="font-mono text-xs">.env.local</code> y crea las tablas
-          de <code className="font-mono text-xs">supabase/schema.sql</code> para
-          poder iniciar sesión.
+          <code className="font-mono text-xs">.env.local</code> y crea las
+          tablas de <code className="font-mono text-xs">supabase/schema.sql</code>{" "}
+          para poder iniciar sesión.
         </div>
       ) : null}
 
@@ -70,9 +74,13 @@ export function LoginForm() {
         />
       </Field>
 
-      <Button type="submit" loading={isSubmitting} className="w-full">
-        Iniciar sesión
-      </Button>
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-fire px-4 text-sm font-semibold text-textPrimary transition-colors hover:bg-fire/80 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {isSubmitting ? "Iniciando..." : "Iniciar sesión"}
+      </button>
     </form>
   );
 }

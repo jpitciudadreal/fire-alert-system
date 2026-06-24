@@ -6,20 +6,70 @@ import {
   MapContainer,
   Popup,
   TileLayer,
-  Tooltip,
+  useMap,
 } from "react-leaflet";
 import type { FirePoint } from "@/types";
 import { Badge } from "@/components/ui/Badge";
 import { formatAcqTime } from "@/lib/firms/client";
 
+/**
+ * Altura del wrapper del mapa.
+ * - `number` (ej. `600`) → altura fija en píxeles (compat legacy).
+ * - `"fill"`              → ocupa el 100 % del alto disponible (h-full).
+ *
+ * El modo `fill` requiere que el contenedor padre tenga una altura
+ * resuelta (flex-1, h-screen, etc.). En la landing tabbed se usa con
+ * un `main` `flex-1 overflow-hidden` para que el mapa ocupe el resto
+ * del viewport menos header/tabs/footer.
+ */
+export type FireMapHeight = number | "fill";
+
+/**
+ * Capas base que el usuario puede alternar desde la UI del tab.
+ * - `dark`      → CartoDB dark (mapas políticos tinted dark). Default.
+ * - `satellite` → Esri World Imagery (ortofotos). Útil para cotejar
+ *                 la localización exacta de un foco contra el terreno.
+ *
+ * `dark` y `satellite` son mutuamente excluyentes — se renderiza
+ * UNA sola `<TileLayer>` por `<MapContainer>`. Cambiar el `view`
+ * desmonta la TileLayer vieja y monta la nueva; Leaflet no recrea
+ * el resto del state del mapa (zoom, position, markers) gracias a
+ * que la instancia del mapa persiste entre renders.
+ */
+export type FireMapView = "dark" | "satellite";
+
 export interface FireMapProps {
   fires: FirePoint[];
-  height?: number;
+  height?: FireMapHeight;
   initialCenter?: [number, number];
   initialZoom?: number;
+  view?: FireMapView;
 }
 
 const SPAIN_CENTER: [number, number] = [39.8, -3.5];
+
+/**
+ * Configuración por capa base. Centralizado aquí para que añadir
+ * una tercera vista (`topo`, `terrain`, ...) sea trivial — sólo se
+ * añade una entrada a este record y se documenta la atribución.
+ */
+const BASE_LAYERS: Record<
+  FireMapView,
+  { url: string; attribution: string; maxZoom: number }
+> = {
+  dark: {
+    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    maxZoom: 19,
+  },
+  satellite: {
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attribution:
+      'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS Community',
+    maxZoom: 19,
+  },
+};
 
 function confidenceTone(confidence: string): "high" | "nominal" | "low" {
   if (confidence === "high") return "high";
@@ -39,32 +89,96 @@ function confidenceColor(tone: "high" | "nominal" | "low"): string {
 }
 
 /**
- * Actual leaflet renderer. Imported dynamically with `ssr: false` from a
- * client wrapper to avoid the `window is not defined` SSR crash
- * (Leaflet accesses `window` at module import time).
+ * Sincroniza el tamaño del canvas Leaflet con el tamaño real del
+ * contenedor tras la hidratación y en cada resize del mismo. Es la
+ * solución canónica al bug clásico de Leaflet dentro de layouts que
+ * cambian de tamaño vía flex-grow o layout shifts: Leaflet cachea las
+ * dimensiones del contenedor en su mount con `getBoundingClientRect`
+ * y si ese instante ocurre antes de que flex termine su distribución,
+ * captura 0 y el mapa queda muerto aunque el contenedor crezca después.
+ *
+ * `invalidateSize()` fuerza a Leaflet a releer el tamaño real del
+ * contenedor y a re-renderizar. `ResizeObserver` cubre el caso
+ * resize-driven (cambio de pestaña, rotación, viewport dinámico).
+ */
+function MapResizer() {
+  const map = useMap();
+
+  React.useEffect(() => {
+    // Primer flush post-hidratación — captura el tamaño real una vez
+    // que flex-grow ya haya corrido.
+    map.invalidateSize();
+
+    // Y en cada cambio de tamaño del contenedor mientras el mapa viva.
+    const container = map.getContainer();
+    if (!container) return;
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const observer = new ResizeObserver(() => {
+      // Debounce 50ms — Leaflet re-renderiza entero y queremos
+      // evitar storms si el navegador dispara varios eventos seguidos.
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => map.invalidateSize(), 50);
+    });
+    observer.observe(container);
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      observer.disconnect();
+    };
+  }, [map]);
+
+  return null;
+}
+
+/**
+ * Renderer Leaflet real. Se importa dinámicamente con `ssr: false`
+ * desde `MapShell.tsx` para evitar el crash `window is not defined`
+ * durante el render del servidor (Leaflet accede a `window` al cargar
+ * el módulo).
  */
 export default function FireMap({
   fires,
   height = 560,
   initialCenter = SPAIN_CENTER,
   initialZoom = 6,
+  view = "satellite",
 }: FireMapProps) {
+  // Combina el modo `fill` con altura numérica legacy sin que el caller
+  // tenga que duplicar lógica.
+  //
+  //   - Modo número (`560`): wrapper con `style={{ height: 560 }}`,
+  //     ignora el chain flex del padre.
+  //   - Modo `fill`: wrapper con `absolute inset-0` para posicionarlo
+  //     contra el padre `relative`. Esto escapa de los problemas del
+  //     chain flex anidado (`main` flex-1 → TabMap root flex-col →
+  //     map zone flex-1 → MapShell flex-item → wrapper h-full) que
+  //     en algunos casos resuelven a `height: 0` si algún nodo pierde
+  //     la altura definida. Con absolute el browser resuelve contra
+  //     el contenedor relativo sin ambigüedad.
+  const fillMode = height === "fill";
+  const wrapperStyle: React.CSSProperties | undefined = fillMode
+    ? undefined
+    : { height };
+  const wrapperClass = fillMode
+    ? "absolute inset-0 overflow-hidden rounded-2xl border border-white/10 shadow-2xl shadow-black/40"
+    : "relative overflow-hidden rounded-2xl border border-white/10 shadow-2xl shadow-black/40";
+  const baseLayer = BASE_LAYERS[view];
+
   return (
-    <div
-      className="relative overflow-hidden rounded-2xl border border-white/10 shadow-2xl shadow-black/40"
-      style={{ height }}
-    >
+    <div className={wrapperClass} style={wrapperStyle}>
       <MapContainer
         center={initialCenter}
         zoom={initialZoom}
         scrollWheelZoom
-        className="h-full w-full bg-zinc-950"
+        className="absolute inset-0 z-0 bg-zinc-950"
         style={{ background: "#09090b" }}
       >
+        <MapResizer />
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          maxZoom={19}
+          attribution={baseLayer.attribution}
+          url={baseLayer.url}
+          maxZoom={baseLayer.maxZoom}
         />
 
         {fires.map((fire) => {
@@ -82,22 +196,6 @@ export default function FireMap({
                 weight: tone === "high" ? 2.5 : 1.8,
               }}
             >
-              <Tooltip direction="top" offset={[0, -6]} opacity={1}>
-                <div className="space-y-1 text-xs">
-                  <div className="font-semibold text-zinc-900">
-                    {tone === "high" ? "🔥 Alta confianza" : "Foco activo"}
-                  </div>
-                  <div className="text-zinc-700">
-                    {fire.latitude.toFixed(3)}, {fire.longitude.toFixed(3)}
-                  </div>
-                  <div className="text-zinc-600">
-                    {fire.acq_date} · {formatAcqTime(fire.acq_time)} UTC
-                  </div>
-                  <div className="text-zinc-600">
-                    Brillo: {fire.brightness.toFixed(1)} K
-                  </div>
-                </div>
-              </Tooltip>
               <Popup>
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2">

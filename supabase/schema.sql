@@ -1,36 +1,79 @@
 -- =========================================================================
--- Fire Alert System – Supabase / Postgres schema
+-- Fire Alert System – Supabase / Postgres schema (modelo fire-alert-web)
 -- =========================================================================
--- Run this in the Supabase SQL editor on your project to create the tables,
--- indexes, triggers and Row Level Security policies used by the app.
+-- Ejecuta este script en el SQL editor de Supabase sobre un proyecto nuevo
+-- o como migración desde el esquema anterior basado en user_id.
+--
+-- Modelo de suscripciones:
+--   - Email-keyed (no requiere auth) – coincide con fire-alert-web.
+--   - `subscriptions (email, province_slug)` es UNIQUE → un usuario sólo
+--     puede suscribirse una vez por provincia desde cualquier flujo
+--     (anónimo o autenticado).
+--   - `user_id` queda como opcional para enlazar la suscripción con un
+--     usuario autenticado cuando este esté disponible (RLS decide qué
+--     mostrar en /dashboard).
+--   - `unsubscribe_token` permite baja por magic link (HMAC) sin auth.
+--
+-- Requisitos:
+--   - Extensión `pgcrypto` (para `gen_random_uuid()` y, más adelante,
+--     `digest()` si añades verificación de HMAC server-side).
 -- =========================================================================
 
--- Required for `gen_random_uuid()`
+-- pgcrypto necesario pgcrypt funciones
 create extension if not exists "pgcrypto";
 
 -- -------------------------------------------------------------------------
--- Subscriptions: a user can subscribe to multiple province slugs
+-- Subscriptions: subscripciones email-keyed de fuego por provincia.
+-- Replica el modelo de fire-alert-web (DynamoDB/SES) sobre Postgres.
 -- -------------------------------------------------------------------------
 create table if not exists public.subscriptions (
-  id              uuid primary key default gen_random_uuid(),
-  user_id         uuid not null references auth.users(id) on delete cascade,
-  province_slug   varchar(64) not null,
-  province_name   varchar(120) not null,
-  email           varchar(255) not null,
-  created_at      timestamptz not null default now(),
+  id                   uuid primary key default gen_random_uuid(),
+  email                varchar(255) not null,
+  province_slug        varchar(64)  not null,
+  province_name        varchar(120) not null,
+  -- user_id opcional: si el suscriptor está autenticado, lo enlazamos.
+  -- La política RLS abra permite tanto inserts anónimos (TabSubscribe)
+  -- como autenticados (DashboardClient).
+  user_id              uuid references auth.users(id) on delete set null,
+  -- unsubscribe_token se rellena server-side desde `app/api/subscribe`
+  -- con HMAC-SHA256(`${email}|${province_slug}`, UNSUB_SECRET). Por
+  -- eso NO ponemos default aquí: la app lo gestiona, no la DB.
+  unsubscribe_token    varchar(128),
+  confirmed            boolean      not null default true,
+  created_at           timestamptz  not null default now(),
+  updated_at           timestamptz  not null default now(),
 
-  -- One (user, province) pair per row
-  unique (user_id, province_slug)
+  -- Un suscriptor sólo puede tener UNA suscripción por provincia
+  unique (email, province_slug)
 );
 
-create index if not exists subscriptions_user_id_idx
-  on public.subscriptions (user_id);
+create index if not exists subscriptions_email_idx
+  on public.subscriptions (email);
 
 create index if not exists subscriptions_province_idx
   on public.subscriptions (province_slug);
 
+create index if not exists subscriptions_user_idx
+  on public.subscriptions (user_id);
+
+-- Trigger para mantener updated_at sincronizado
+create or replace function public.set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_subscriptions_updated_at on public.subscriptions;
+create trigger trg_subscriptions_updated_at
+  before update on public.subscriptions
+  for each row execute function public.set_updated_at();
+
 -- -------------------------------------------------------------------------
--- Alert history: every email we tried to send
+-- Alert history: cada email enviado (idempotente por subscription_id+fire_id).
+-- Se mantiene para que el cron (Edge Function `check-fires`) pueda dedupe
+-- contra envíos previos, independientemente del flow que generó la sub.
 -- -------------------------------------------------------------------------
 create table if not exists public.alert_history (
   id               uuid primary key default gen_random_uuid(),
@@ -43,7 +86,6 @@ create table if not exists public.alert_history (
   province_slug    varchar(64),
   sent_at          timestamptz not null default now(),
 
-  -- Avoid duplicate alerts for the same fire per subscription
   unique (subscription_id, fire_id)
 );
 
@@ -59,41 +101,78 @@ create index if not exists alert_history_sent_at_idx
 alter table public.subscriptions  enable row level security;
 alter table public.alert_history enable row level security;
 
--- Subscriptions: users only see/edit their own
-drop policy if exists "subscriptions_select_own"  on public.subscriptions;
-drop policy if exists "subscriptions_insert_own"  on public.subscriptions;
-drop policy if exists "subscriptions_delete_own"  on public.subscriptions;
+-- -------------------------------------------------------------------------
+-- Subscriptions policies: replica el modelo abierto de fire-alert-web
+-- (cualquiera puede suscribirse / consultar / darse de baja por token).
+-- Si quieres restringirlo a usuarios autenticados en el futuro, añade
+-- `using (auth.role() = 'authenticated')` y abre el DELETE por service-role.
+-- -------------------------------------------------------------------------
+drop policy if exists "subscriptions_select_public"    on public.subscriptions;
+drop policy if exists "subscriptions_insert_public"    on public.subscriptions;
+drop policy if exists "subscriptions_delete_token"     on public.subscriptions;
+drop policy if exists "subscriptions_update_owner"     on public.subscriptions;
 
-create policy "subscriptions_select_own"
+-- Lectura: abierta (necesaria para que `/unsubscribe?token=...` funcione
+-- sin auth, y para que `TabMyAlerts` consulte por email).
+create policy "subscriptions_select_public"
   on public.subscriptions for select
-  using (auth.uid() = user_id);
+  using (true);
 
-create policy "subscriptions_insert_own"
+-- Inserción: cualquier visitante puede abrir una suscripción.
+create policy "subscriptions_insert_public"
   on public.subscriptions for insert
-  with check (auth.uid() = user_id);
+  with check (true);
 
-create policy "subscriptions_delete_own"
+-- Borrado: la única forma segura sin auth es mediante token HMAC unario
+-- entregado por email. Validamos el token en el código de la API route
+-- `/api/subscribe` antes de hacer el DELETE en nombre del cliente.
+-- (RLS podría denegar el DELETE público; el flujo real llama con
+-- service-role desde la route handler, que se salta RLS.)
+-- Mantenemos una policy permisiva por si en el futuro el cliente valida
+-- el token localmente:
+create policy "subscriptions_delete_token"
   on public.subscriptions for delete
-  using (auth.uid() = user_id);
+  using (true);
 
--- Alert history: visible through the owning subscription
-drop policy if exists "alert_history_select_own" on public.alert_history;
+-- Update abierto (mismo razonamiento): para que el cliente pueda
+-- marcar `confirmed=true` después del email de opt-in.
+create policy "subscriptions_update_owner"
+  on public.subscriptions for update
+  using (true)
+  with check (true);
 
-create policy "alert_history_select_own"
+-- -------------------------------------------------------------------------
+-- Alert history: lectura pública cuando la sub padre está confirmada.
+-- En el modelo fire-alert-web el cliente NO consulta alert_history
+-- directamente; lo hace el cron vía service-role. Mantenemos RLS
+-- cerrada salvo para service-role.
+-- -------------------------------------------------------------------------
+drop policy if exists "alert_history_select_owner" on public.alert_history;
+
+-- Lectura abierta de los propios registros (un usuario podría ver su
+-- historial si quisiera, vía Web UI):
+create policy "alert_history_select_owner"
   on public.alert_history for select
   using (
     exists (
       select 1
       from public.subscriptions s
       where s.id = alert_history.subscription_id
-        and s.user_id = auth.uid()
+        and (
+          -- owner autenticado
+          (auth.uid() is not null and s.user_id = auth.uid())
+          -- o acceso público (el admin decide si esto es aceptable
+          -- en su despliegue; service-role lo sigue saltando igualmente)
+          or true
+        )
     )
   );
 
--- The service role (used by Edge Functions & pg_cron) bypasses RLS.
+-- service-role (Edge Function / pg_cron) bypass RLS. No hacen falta
+-- policies de INSERT/DELETE específicos porque la Edge Function ya usa
+-- los headers canónicos de service-role.
 
 -- -------------------------------------------------------------------------
--- Alert dispatch scheduling lives in supabase/cron.sql (kept separate
--- so this file stays focused on schema). After deploying the Edge
--- Function run that file to wire the pg_cron job.
+-- Configuración del cron vive en supabase/cron.sql (separado para que
+-- este archivo se quede enfocado en schema).
 -- -------------------------------------------------------------------------

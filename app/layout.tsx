@@ -1,31 +1,35 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers, ToastProvider } from "@/components/Providers";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
   display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains",
   subsets: ["latin"],
   display: "swap",
 });
 
 export const metadata: Metadata = {
   title: {
-    default: "Fire Alert · Wildfire tracking for Spain",
-    template: "%s · Fire Alert",
+    default: "Fire Alert España — Alertas de incendios en tiempo real",
+    template: "%s · Fire Alert España",
   },
   description:
-    "Mapa en tiempo real de focos de incendio activos en España y alertas personalizadas por provincia.",
+    "Suscríbete a alertas de incendios forestales por provincia. Datos satelitales NASA FIRMS actualizados cada 3 horas.",
+  icons: {
+    icon:
+      "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔥</text></svg>",
+  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0a0b",
+  themeColor: "#0D1117",
 };
 
 export default function RootLayout({
@@ -34,10 +38,10 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-screen bg-zinc-950 text-zinc-100">
+      <body className="min-h-screen bg-base text-textPrimary">
         <Providers>
           <ToastProvider>{children}</ToastProvider>
         </Providers>

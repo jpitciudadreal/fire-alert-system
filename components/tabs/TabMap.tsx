@@ -1,0 +1,351 @@
+"use client";
+
+import { useEffect, useMemo, useState, useCallback } from "react";
+import MapShell, { type FireMapView } from "@/components/map/MapShell";
+import { Badge } from "@/components/ui/Badge";
+
+/**
+ * Tab "Mapa en vivo" de fire-alert-web, adaptado a Leaflet.
+ *
+ * Comportamiento actual:
+ *   - El mapa ocupa el alto completo disponible (la página = viewport
+ *     menos header+tabs+footer; aquí se usa `height="fill"` y la cadena
+ *     <main flex-1 overflow-hidden> + <div h-full w-full> propaga el
+ *     alto).
+ *   - El panel lateral muestra los 5 focos MÁS RECIENTES (ordenados
+ *     por `acq_date+acq_time` descendente) y un botón "Ver más →" que
+ *     delega al padre (`app/page.tsx`) cambiar a la pestaña Historial.
+ *   - Toolbar superior monospaced con `N focos activos` + botón
+ *     `↻ Actualizar` (réplica del subproyecto).
+ */
+
+interface FirePoint {
+  fire_id: string;
+  latitude: number;
+  longitude: number;
+  satellite: string;
+  confidence: "low" | "nominal" | "high";
+  brightness: number;
+  acq_date: string;
+  acq_time: string;
+  province?: string;
+}
+
+interface FireResponse {
+  source: "nasa-firms" | "mock";
+  isMock: boolean;
+  count: number;
+  fetchedAt: string;
+  fires: FirePoint[];
+  reason?: string;
+}
+
+interface TabMapProps {
+  /**
+   * Callback invocado por el botón "Ver más" del panel lateral.
+   * El padre (la página tabbed) decide a qué pestaña saltar — aquí
+   * sólo señalizamos la intención para evitar que TabMap conozca el
+   * estado global.
+   */
+  onShowHistory?: () => void;
+}
+
+const RECENT_COUNT = 5;
+
+// Sentinel que usamos como timestamp de ordenación para campos faltantes.
+// Lo dejamos muy en el pasado para que los fuegos sin `acq_date` caigan al
+// final de la lista, no al principio.
+const FALLBACK_SORT_KEY = "0000-00-00 0000";
+
+function sortKey(f: FirePoint): string {
+  if (!f.acq_date) return FALLBACK_SORT_KEY;
+  // acq_time viene como "HHMM" o vacío; padding defensivo para alinear
+  // sorting lexicográfico con orden cronológico.
+  const paddedTime = (f.acq_time ?? "").padStart(4, "0");
+  return `${f.acq_date} ${paddedTime}`;
+}
+
+export default function TabMap({ onShowHistory }: TabMapProps = {}) {
+  const [fires, setFires] = useState<FirePoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<FirePoint | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  // Capa base del mapa. Por defecto dark (CartoDB); el usuario puede
+  // alternar a satélite (Esri World Imagery) para ver ortofoto y
+  // cotejar la posición exacta del foco contra el terreno.
+  const [view, setView] = useState<FireMapView>("satellite");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/fires?limit=200", { cache: "no-store" });
+      const data = (await res.json()) as FireResponse;
+      setFires(data.fires ?? []);
+      setLastUpdate(new Date());
+    } catch (e) {
+      console.error("[TabMap] load failed:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Mantén la lista completa para el mapa (los markers siempre pintan
+  // los 200 focos, da igual cuántos se muestran en el aside). El aside
+  // toma sólo los `RECENT_COUNT` más recientes.
+  const recentFires = useMemo(
+    () =>
+      [...fires]
+        .sort((a, b) => sortKey(b).localeCompare(sortKey(a)))
+        .slice(0, RECENT_COUNT),
+    [fires]
+  );
+
+  return (
+    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden lg:flex-row">
+      {/* Mapa */}
+      {/* `min-w-0` permite que la zona crezca en flex-row sin empujar a
+         la `<aside>` fuera del viewport (default min-width: auto bloquearía
+         el shrink horizontal). `min-h-0` idem para eje vertical. */}
+      <div className="relative flex-1 min-h-0 min-w-0 overflow-hidden bg-base">
+        <div className="scan-line" />
+
+        {/* Toolbar superior */}
+        <div className="pointer-events-auto absolute left-3 right-3 top-3 z-[1000] flex flex-wrap items-center justify-between gap-2">
+          {/* Estado de carga — pill izquierdo compacto. Se queda como
+              feedback inmediato del estado de red/fetch. */}
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-surface/90 px-3 py-1.5">
+            <span
+              className={`h-2 w-2 rounded-full ${loading ? "bg-fire animate-pulse" : "bg-fire"}`}
+            />
+            <span className="font-mono text-xs text-textSecondary">
+              {loading ? "Cargando..." : `${fires.length} focos activos`}
+            </span>
+          </div>
+
+          {/* Controles derechos (badge + toggle capa + actualizar).
+              Agrupados para que `justify-between` los separe del pill
+              izquierdo y, al envolver, no se monten encima del mapa. */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/*
+              Badge requerido por el usuario: contador de focos activos
+              justo a la derecha del botón Actualizar. Tone fijo en
+              "high" (rojo, color de marca del sistema de alerta) para
+              refuerzo visual constante — la app es sobre incendios, el
+              indicador principal debe leerse como "alerta activa". El
+              contenido sigue reflejando el estado real del fetch y
+              número de detecciones.
+            */}
+            <Badge tone="high">
+              {loading ? "Cargando…" : `${fires.length} focos activos`}
+            </Badge>
+
+            {/*
+              Toggle de capa base (dark ↔ satellite). El texto del botón
+              cambia para reflejar la ACCIÓN disponible ("Satélite"
+              cuando estás en dark ⇒ "ir a satélite"; "Mapa" cuando
+              estás en satellite ⇒ "volver al mapa"). El emoji ayuda a
+              identificar visualmente la capa destino sin abrir tooltips.
+            */}
+            <button
+              type="button"
+              onClick={() =>
+                setView(view === "dark" ? "satellite" : "dark")
+              }
+              title={
+                view === "dark"
+                  ? "Cambiar a vista satélite"
+                  : "Volver a mapa político"
+              }
+              aria-label={
+                view === "dark"
+                  ? "Cambiar a vista satélite"
+                  : "Volver a mapa político"
+              }
+              className="rounded-lg border border-border bg-surface/90 px-3 py-1.5 font-mono text-xs text-textSecondary transition-colors hover:border-fire hover:text-textPrimary"
+            >
+              {view === "dark" ? "🛰️ Satélite" : "🗺️ Mapa"}
+            </button>
+
+            <button
+              onClick={load}
+              disabled={loading}
+              className="rounded-lg border border-border bg-surface/90 px-3 py-1.5 font-mono text-xs text-textSecondary transition-colors hover:border-fire hover:text-textPrimary disabled:opacity-50"
+            >
+              {loading ? "⟳" : "↻ Actualizar"}
+            </button>
+          </div>
+        </div>
+
+        <MapShell fires={fires} height="fill" view={view} />
+
+        {/* Última actualización */}
+        {lastUpdate ? (
+          <div className="absolute bottom-3 right-3 z-[1000] rounded border border-border bg-surface/90 px-2 py-1 font-mono text-xs text-textSecondary">
+            {lastUpdate.toLocaleTimeString("es-ES")}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Panel lateral — siempre ocupa todo el alto, con scroll interno.
+          Estructura flex:
+          - `flex-1`         → grow por defecto (mobile: comparte alto
+                              50/50 con la zona mapa en flex-col).
+          - `min-h-0`        → permite que el `height: 100%` se
+                              aplique correctamente en flex layout
+                              (default `min-height: auto` lo colapsa).
+          - `lg:flex-none`   → anula el `flex-1` en desktop (lg:flex-row)
+                              porque `lg:w-80` impone ancho fijo de 320
+                              px; el cross-axis stretch ya cubre el
+                              alto de la fila sin necesidad de crecer.
+          - `lg:w-80`        → ancho fijo desktop (320 px).      */}
+      <aside className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden border-l border-border bg-surface lg:flex-none lg:w-80">
+        {selected ? (
+          <>
+            {/* Header sticky del detalle — mismo borde inferior que el
+                estado "no-seleccionado" para coherencia visual. */}
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h2 className="font-semibold text-textPrimary">Detalle del foco</h2>
+              <button
+                onClick={() => setSelected(null)}
+                className="text-lg text-textSecondary hover:text-textPrimary"
+                aria-label="Cerrar detalle"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="animate-fade-in flex-1 overflow-y-auto p-4">
+            <div className="space-y-3">
+              {[
+                ["ID", selected.fire_id, true],
+                ["Satélite", selected.satellite],
+                ["Latitud", selected.latitude.toFixed(4)],
+                ["Longitud", selected.longitude.toFixed(4)],
+                ["Confianza", selected.confidence],
+                ["Brillo", `${selected.brightness.toFixed(1)} K`],
+                ["Fecha", selected.acq_date],
+                ["Hora (UTC)", selected.acq_time],
+                ["Provincia", selected.province ?? "—"],
+              ].map(([label, value, mono]) => (
+                <div
+                  key={String(label)}
+                  className="flex items-start justify-between gap-2"
+                >
+                  <span className="flex-shrink-0 text-xs text-textSecondary">
+                    {label}
+                  </span>
+                  <span
+                    className={`break-all text-right text-xs ${
+                      mono ? "font-mono text-amber" : "text-textPrimary"
+                    }`}
+                  >
+                    {String(value ?? "—")}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <a
+              href={`https://www.google.com/maps?q=${selected.latitude},${selected.longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 block w-full rounded-lg border border-fire/30 bg-fire/10 py-2 text-center text-sm text-fire transition-colors hover:bg-fire/20"
+            >
+              Ver en Google Maps →
+            </a>
+          </div>
+          </>
+        ) : (
+          <>
+            <div className="border-b border-border px-4 py-3">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-textPrimary">Focos activos</h2>
+                <span className="font-mono text-[10px] uppercase tracking-wider text-textSecondary">
+                  Top {RECENT_COUNT} recientes
+                </span>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {loading ? (
+                <div className="py-12 text-center font-mono text-sm text-textSecondary">
+                  Cargando...
+                </div>
+              ) : fires.length === 0 ? (
+                <div className="py-12 text-center">
+                  <div className="mb-2 text-3xl">✅</div>
+                  <div className="text-sm text-textSecondary">
+                    Sin focos detectados
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {recentFires.map((fire) => (
+                    <button
+                      key={fire.fire_id}
+                      onClick={() => setSelected(fire)}
+                      className="w-full rounded-lg border border-border bg-base p-3 text-left transition-colors hover:border-fire/50"
+                    >
+                      <div className="mb-1 flex items-center gap-2">
+                        <span
+                          className="h-2 w-2 flex-shrink-0 rounded-full"
+                          style={{
+                            background:
+                              fire.confidence === "high"
+                                ? "#FF4500"
+                                : fire.confidence === "nominal"
+                                  ? "#F5A623"
+                                  : "#8B9DC3",
+                          }}
+                        />
+                        <span className="text-xs font-semibold capitalize text-textPrimary">
+                          {(fire.province ?? "—").replace(/-/g, " ")}
+                        </span>
+                        <span className="ml-auto font-mono text-xs text-amber">
+                          {fire.brightness.toFixed(0)} K
+                        </span>
+                      </div>
+                      <div className="font-mono text-xs text-textSecondary">
+                        {fire.latitude.toFixed(3)}, {fire.longitude.toFixed(3)}
+                      </div>
+                      <div className="mt-0.5 font-mono text-xs text-textSecondary">
+                        {fire.acq_date} {fire.acq_time}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/*
+              Pie fijo del aside con el salto a Historial. Sólo se renderiza
+              si el padre nos pasó callback — si no, mejor ocultar que
+              mostrar un botón inerte. NO lo deshabilitamos cuando
+              fires.length===0: un usuario sin focos activos sigue queriendo
+              revisar el historial reciente para confirmar la tendencia.
+            */}
+            {onShowHistory ? (
+              <div className="border-t border-border p-4">
+                <button
+                  type="button"
+                  onClick={onShowHistory}
+                  className="block w-full rounded-lg border border-border bg-base py-2.5 text-center text-sm text-textPrimary transition-colors hover:border-fire hover:bg-fire/10 hover:text-fire"
+                >
+                  {fires.length > RECENT_COUNT ? (
+                    <>Ver más → ({(fires.length - RECENT_COUNT)}+ en historial)</>
+                  ) : fires.length === 0 ? (
+                    <>Ver historial → (sin detecciones hoy)</>
+                  ) : (
+                    <>Ver más → (Historial completo)</>
+                  )}
+                </button>
+              </div>
+            ) : null}
+          </>
+        )}
+      </aside>
+    </div>
+  );
+}

@@ -4,75 +4,114 @@
 /* -------------------------------------------------------------------------- */
 /*                            Theme tokens (Tailwind v4)                      */
 /* -------------------------------------------------------------------------- */
+/* Colores y animaciones portados del subproyecto fire-alert-web (Tailwind v3)
+   al sistema nativo de tokens CSS de Tailwind v4. Los nombres en camelCase
+   se conservan para que las clases utility existentes (`bg-base`,
+   `text-textPrimary`, `border-border`, `animate-pulse-fire`, etc.) sigan
+   funcionando sin tocar el JSX. */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  /* Color tokens */
+  --color-base: #0D1117;
+  --color-surface: #1C2333;
+  --color-surfaceHi: #243048;
+  --color-fire: #FF4500;
+  --color-amber: #F5A623;
+  --color-textPrimary: #E8EBF0;
+  --color-textSecondary: #8B9DC3;
+  --color-border: #2D3A52;
 
-  --color-ember-50: oklch(0.97 0.02 50);
-  --color-ember-100: oklch(0.92 0.05 50);
-  --color-ember-200: oklch(0.85 0.10 50);
-  --color-ember-300: oklch(0.78 0.16 45);
-  --color-ember-400: oklch(0.71 0.21 40);
-  --color-ember-500: oklch(0.65 0.24 35);
-  --color-ember-600: oklch(0.59 0.25 30);
-  --color-ember-700: oklch(0.52 0.23 28);
-  --color-ember-800: oklch(0.42 0.18 26);
-  --color-ember-900: oklch(0.32 0.13 24);
+  /* Font tokens — variables inyectadas desde next/font/google en layout.tsx */
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
 
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Animation tokens */
+  --animate-pulse-fire: pulse-fire 2s ease-in-out infinite;
+  --animate-ping-slow: ping 2.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+  --animate-fade-in: fade-in 0.4s ease-out;
 }
+
+/* Keyframes — IMPORTANTE: deben estar fuera del bloque @theme.
+   Si estuvieran anidadas, Lightning CSS los emitiría dentro del
+   bloque `:root` que genera desde @theme, y como `@keyframes` es
+   un at-rule no permitido dentro de un selector (CSS inválido)
+   el navegador descartaría el `:root` entero, perdiendo TODAS las
+   variables --color-*, --font-* y --animate-*. Consecuencias:
+   bg-fire, text-textPrimary, border-border, etc. resuelven a
+   inválido → fondos y textos invisibles. */
+@keyframes pulse-fire {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.6; transform: scale(1.15); }
+}
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                Base styles                                  */
+/* -------------------------------------------------------------------------- */
 
 :root {
-  --background: #0a0a0b;
-  --foreground: #ededed;
+  color-scheme: dark;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --background: #fafafa;
-    --foreground: #18181b;
-  }
+* {
+  box-sizing: border-box;
 }
 
 html,
 body {
   height: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  background: var(--color-base);
+  color: var(--color-textPrimary);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
+
+/* Custom scrollbar — más fino que el del proyecto anterior y del mismo
+   color que el borde de las cards para que no distraiga. */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--color-surface); }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-fire); }
 
 /* -------------------------------------------------------------------------- */
 /*                              Leaflet overrides                             */
 /* -------------------------------------------------------------------------- */
 
 .leaflet-container {
-  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans);
+  background: var(--color-base);
 }
 
 .leaflet-popup-content-wrapper,
 .leaflet-tooltip {
-  background: #fafafa;
-  color: #18181b;
+  background: var(--color-surface);
+  color: var(--color-textPrimary);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
 
 .leaflet-popup-tip,
 .leaflet-tooltip-top:before {
-  background: #fafafa;
+  background: var(--color-surface);
 }
 
 .leaflet-control-attribution {
-  background: rgba(9, 9, 11, 0.6) !important;
-  color: #d4d4d8 !important;
+  background: rgba(13, 17, 23, 0.7) !important;
+  color: var(--color-textSecondary) !important;
   font-size: 10px !important;
   backdrop-filter: blur(6px);
   padding: 2px 6px !important;
@@ -80,36 +119,53 @@ body {
 }
 
 .leaflet-control-attribution a {
-  color: #fb923c !important;
+  color: var(--color-fire) !important;
 }
 
 /* -------------------------------------------------------------------------- */
-/*                              Tailwind animations                            */
+/*                              Custom utilities                              */
 /* -------------------------------------------------------------------------- */
 
+/* Pulso luminoso alrededor de los puntos del mapa SVG original. Se conserva
+   por compatibilidad con clases ya escritas. */
+@utility fire-dot {
+  animation: fire-pulse 2s ease-in-out infinite;
+}
+
+@keyframes fire-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 69, 0, 0.7); }
+  50%      { box-shadow: 0 0 0 8px rgba(255, 69, 0, 0); }
+}
+
+/* Línea de escaneo del mapa estilo CRT — usada en el header del mapa
+   para dar sensación de monitor en tiempo real. */
+@utility scan-line {
+  pointer-events: none;
+  user-select: none;
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  /* z-999: por encima de los tiles Leaflet (que no tienen z-index
+     numérico) pero por debajo de la toolbar (z-1000). Así no queda
+     oculto detrás de los markers ni solapa la botonera flotante. */
+  z-index: 999;
+  background: linear-gradient(90deg, transparent, var(--color-fire), transparent);
+  animation: scan 4s linear infinite;
+}
+
+@keyframes scan {
+  0%   { transform: translateY(-100%); opacity: 0.03; }
+  100% { transform: translateY(100vh); opacity: 0.03; }
+}
+
+/* Tab indicator — subrayado + cambio de color de la pestaña activa. */
+@utility tab-active {
+  border-bottom: 2px solid var(--color-fire);
+  color: var(--color-fire);
+}
+
+/* Slide-down desde la esquina superior — usado por toasts del dashboard. */
 @keyframes slide-in {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Custom scrollbar so the dark surface feels intentional */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(161, 161, 170, 0.25);
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(161, 161, 170, 0.45);
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }

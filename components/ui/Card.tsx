@@ -7,7 +7,10 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   padded?: boolean;
 }
 
-/** Glassmorphism container that floats over the dark map background */
+/**
+ * Card — contenedor simple sobre `bg-surface` con borde `border-border`.
+ * Réplica del estilo fire-alert-web: sin glassmorphism ni gradiente.
+ */
 export const Card = React.forwardRef<HTMLDivElement, CardProps>(function Card(
   { className, children, padded = true, ...rest },
   ref
@@ -16,8 +19,8 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(function Card(
     <div
       ref={ref}
       className={[
-        "rounded-2xl border border-white/10 bg-zinc-950/70 backdrop-blur-xl",
-        "shadow-2xl shadow-black/40 text-zinc-100",
+        "rounded-2xl border border-border bg-surface text-textPrimary",
+        "shadow-2xl shadow-black/40",
         padded ? "p-5 sm:p-6" : "",
         className,
       ]
@@ -42,11 +45,11 @@ export function CardHeader({
   return (
     <div className="mb-5 flex items-start justify-between gap-4">
       <div className="min-w-0">
-        <h3 className="text-base font-semibold text-zinc-50 sm:text-lg">
+        <h3 className="text-base font-semibold text-textPrimary sm:text-lg">
           {title}
         </h3>
         {subtitle ? (
-          <p className="mt-1 text-sm text-zinc-400">{subtitle}</p>
+          <p className="mt-1 text-sm text-textSecondary">{subtitle}</p>
         ) : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}

@@ -4,23 +4,30 @@ import { useState } from "react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { SubscriptionForm } from "./SubscriptionForm";
 import { SubscriptionList } from "./SubscriptionList";
-import type { Province, Subscription } from "@/types";
-import { AlertBanner } from "@/components/AlertBanner";
+import type { Province } from "@/lib/provinces";
+
+interface DashboardSubscription {
+  id: string;
+  email: string;
+  province_slug: string;
+  province_name: string;
+  created_at: string;
+  unsubscribe_token?: string;
+  confirmed?: boolean;
+}
 
 interface DashboardClientProps {
   userEmail: string;
-  userId: string;
-  existingSubscriptions: Subscription[];
+  existingSubscriptions: DashboardSubscription[];
   provinces: Province[];
 }
 
 export function DashboardClient({
   userEmail,
-  userId,
   existingSubscriptions,
   provinces,
 }: DashboardClientProps) {
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>(
+  const [subscriptions, setSubscriptions] = useState<DashboardSubscription[]>(
     existingSubscriptions
   );
 
@@ -32,15 +39,15 @@ export function DashboardClient({
           subtitle="Elige la provincia sobre la que quieres recibir alertas por email cuando se detecten nuevos focos."
         />
         <SubscriptionForm
-          userId={userId}
           userEmail={userEmail}
           provinces={provinces}
           existing={subscriptions}
           onCreated={(sub) => setSubscriptions((prev) => [sub, ...prev])}
         />
-        <p className="mt-4 text-xs text-zinc-500">
-          Las suscripciones están protegidas por Row Level Security: solo tú
-          puedes ver y modificar las tuyas.
+        <p className="mt-4 text-xs text-textSecondary">
+          Las suscripciones son email-keyed: funcionan tanto si estás
+          autenticado como si usas la pestaña «Suscribirse» desde la landing
+          sin iniciar sesión.
         </p>
       </Card>
 
@@ -57,10 +64,13 @@ export function DashboardClient({
         />
       </Card>
 
-      <AlertBanner tone="info" title="Próximamente">
-        Cuando el detector (cron + Edge Function) entre en producción,
-        aparecerán aquí las alertas enviadas a tu correo.
-      </AlertBanner>
+      <div className="rounded-xl border border-amber/30 bg-amber/5 px-4 py-3 text-sm text-amber">
+        <strong className="font-semibold">Próximamente</strong>
+        <p className="mt-1 text-xs">
+          Cuando el detector (cron + Edge Function) entre en producción,
+          aparecerán aquí las alertas enviadas a tu correo.
+        </p>
+      </div>
     </>
   );
 }

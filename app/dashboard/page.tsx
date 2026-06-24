@@ -1,12 +1,23 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured, type Subscription } from "@/types";
-import { PROVINCES } from "@/lib/data/provinces";
-import { Card, CardHeader } from "@/components/ui/Card";
-import { AlertBanner } from "@/components/AlertBanner";
+import { isSupabaseConfigured } from "@/types";
 import { DashboardClient } from "@/components/dashboard/DashboardClient";
 import { SignOutButton } from "@/components/dashboard/SignOutButton";
+import { PartnerLogo } from "@/components/brand/PartnerLogo";
+import { FlameGlyph } from "@/components/icons/FlameGlyph";
+
+/**
+ * Dashboard `/dashboard` — vista autenticada con mis suscripciones y
+ * alta de nuevas provincias. Restilizado al tema dark fire (mismas
+ * variables que la landing tabbed).
+ *
+ * Cambios respecto al estado previo:
+ *   - Sustituye el `bg-zinc-950` por `bg-base` y los `border-white/10`
+ *     por `border-border`, gradient `from-orange-500` por `bg-fire`.
+ *   - El botón "Volver al mapa" pasa a `border-border bg-surface`.
+ *   - El banner de "Supabase no configurado" usa tonos amber.
+ */
 
 export const dynamic = "force-dynamic";
 
@@ -15,41 +26,34 @@ export default async function DashboardPage() {
 
   if (!supabaseReady) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
-        <Header email={null} showSignOut={false} />
+      <main className="flex min-h-screen w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8 mx-auto">
+        <DashboardHeader email={null} showSignOut={false} />
 
-        <AlertBanner tone="warn" title="Supabase no configurado">
-          El dashboard necesita que vincules Supabase para guardar suscripciones
+        <div className="rounded-xl border border-amber/30 bg-amber/5 px-4 py-3 text-sm text-amber">
+          <strong className="font-semibold">Supabase no configurado.</strong> El
+          dashboard necesita que vincules Supabase para guardar suscripciones
           y enviarte alertas. Edita{" "}
-          <code className="rounded bg-black/50 px-1 py-0.5 font-mono text-xs">
-            .env.local
-          </code>{" "}
-          con <code>NEXT_PUBLIC_SUPABASE_URL</code> y{" "}
+          <code className="font-mono text-xs">.env.local</code> con{" "}
+          <code>NEXT_PUBLIC_SUPABASE_URL</code> y{" "}
           <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code>, y luego ejecuta el SQL de{" "}
-          <code className="rounded bg-black/50 px-1 py-0.5 font-mono text-xs">
-            supabase/schema.sql
-          </code>
-          .
-        </AlertBanner>
+          <code className="font-mono text-xs">supabase/schema.sql</code>.
+        </div>
 
-        <Card>
-          <CardHeader
-            title="Aún no puedes suscribirte"
-            subtitle="Pero el mapa en vivo sigue funcionando"
-            action={
-              <Link
-                href="/"
-                className="text-xs font-medium text-orange-300 hover:text-orange-200"
-              >
-                ← Volver al mapa
-              </Link>
-            }
-          />
-          <p className="text-sm text-zinc-300">
-            Cuando configures Supabase podrás iniciar sesión y elegir las
-            provincias sobre las que quieres recibir alertas por email.
+        <div className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
+          <h1 className="mb-1 text-base font-semibold text-textPrimary sm:text-lg">
+            Aún no puedes suscribirte
+          </h1>
+          <p className="mb-4 text-xs text-textSecondary sm:text-sm">
+            Pero el mapa en vivo y el alta anónima (pestaña «Suscribirse»)
+            siguen funcionando sin auth.
           </p>
-        </Card>
+          <Link
+            href="/"
+            className="inline-flex h-10 items-center justify-center rounded-xl bg-fire px-4 text-sm font-semibold text-textPrimary transition-colors hover:bg-fire/80"
+          >
+            ← Volver al mapa
+          </Link>
+        </div>
       </main>
     );
   }
@@ -63,48 +67,44 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  // Fetch existing subscriptions; RLS keeps this scoped to the current user.
-  type SubscriptionRow = {
-    id: string;
-    user_id: string;
-    province_slug: string;
-    province_name: string;
-    email: string;
-    created_at: string;
-  };
-
-  const { data: rows } = await supabase
+  // El modelo actual de la base de datos es email-keyed (no per-user).
+  // Las suscripciones del usuario se buscan por su email.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any;
+  const { data: rows } = await sb
     .from("subscriptions")
-    .select("id, user_id, province_slug, province_name, email, created_at")
-    .eq("user_id", user.id)
+    .select("id, email, province_slug, province_name, created_at, unsubscribe_token, confirmed")
+    .eq("email", (user.email ?? "").toLowerCase())
     .order("created_at", { ascending: false });
 
-  const subscriptions: Subscription[] = ((rows ?? []) as SubscriptionRow[]).map(
-    (r) => ({
-      id: r.id,
-      user_id: r.user_id,
-      province_slug: r.province_slug,
-      province_name: r.province_name,
-      email: r.email,
-      created_at: r.created_at,
-    })
-  );
+  const subscriptions = (rows ?? []) as Array<{
+    id: string;
+    email: string;
+    province_slug: string;
+    province_name: string;
+    created_at: string;
+    unsubscribe_token?: string;
+    confirmed?: boolean;
+  }>;
+
+  // Importamos PROVINCES dinámicamente para evitar un ciclo de imports
+  // entre components/dashboard y lib/data/provinces.
+  const { PROVINCES_SORTED } = await import("@/lib/provinces");
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
-      <Header email={user.email ?? null} showSignOut={true} />
+      <DashboardHeader email={user.email ?? null} showSignOut={true} />
 
       <DashboardClient
         userEmail={user.email ?? ""}
-        userId={user.id}
         existingSubscriptions={subscriptions}
-        provinces={PROVINCES}
+        provinces={PROVINCES_SORTED}
       />
     </main>
   );
 }
 
-function Header({
+function DashboardHeader({
   email,
   showSignOut,
 }: {
@@ -112,26 +112,33 @@ function Header({
   showSignOut: boolean;
 }) {
   return (
-    <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <header className="flex flex-col gap-3 border-b border-border bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:rounded-xl sm:border">
       <div className="flex items-center gap-3">
+        <PartnerLogo variant="header" />
+        <div className="flex items-center gap-2">
+          <FlameGlyph className="h-5 w-5 text-fire" />
+          <div>
+            <div className="font-mono text-[11px] uppercase tracking-widest text-textSecondary">
+              Sistema de monitorización
+            </div>
+            <h1 className="text-base font-semibold leading-tight text-textPrimary sm:text-lg">
+              Mis suscripciones
+            </h1>
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {email ? (
+          <span className="font-mono text-xs text-textSecondary">{email}</span>
+        ) : null}
         <Link
           href="/"
-          className="rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-800/60"
+          className="rounded-lg border border-border px-3 py-1.5 text-xs text-textSecondary transition-colors hover:border-fire hover:text-fire"
         >
           ← Mapa
         </Link>
-        <div>
-          <h1 className="text-lg font-semibold text-zinc-50 sm:text-xl">
-            Mis suscripciones
-          </h1>
-          {email ? (
-            <p className="text-xs text-zinc-400 sm:text-sm">
-              Conectado como <span className="font-mono">{email}</span>
-            </p>
-          ) : null}
-        </div>
+        {showSignOut ? <SignOutButton /> : null}
       </div>
-      {showSignOut ? <SignOutButton /> : null}
     </header>
   );
 }

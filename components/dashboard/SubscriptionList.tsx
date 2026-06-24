@@ -1,13 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { useSupabase, useToast } from "@/components/Providers";
-import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
-import type { Subscription } from "@/types";
+import { useToast } from "@/components/Providers";
+
+interface DashboardSubscription {
+  id: string;
+  email: string;
+  province_slug: string;
+  province_name: string;
+  created_at: string;
+  unsubscribe_token?: string;
+  confirmed?: boolean;
+}
 
 interface SubscriptionListProps {
-  subscriptions: Subscription[];
+  subscriptions: DashboardSubscription[];
   onRemoved: (id: string) => void;
 }
 
@@ -15,14 +22,13 @@ export function SubscriptionList({
   subscriptions,
   onRemoved,
 }: SubscriptionListProps) {
-  const supabase = useSupabase();
   const toast = useToast();
   const [removing, setRemoving] = useState<string | null>(null);
 
   if (subscriptions.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-8 text-center">
-        <p className="text-sm text-zinc-400">
+      <div className="rounded-xl border border-dashed border-border bg-base/40 p-8 text-center">
+        <p className="text-sm text-textSecondary">
           Aún no tienes suscripciones. Selecciona una provincia arriba para
           empezar a recibir alertas.
         </p>
@@ -30,51 +36,75 @@ export function SubscriptionList({
     );
   }
 
-  async function remove(id: string, name: string) {
-    setRemoving(id);
-    const { error } = await supabase
-      .from("subscriptions")
-      .delete()
-      .eq("id", id)
-      .select();
-    setRemoving(null);
-    if (error) {
-      toast.push(error.message, "error");
+  const remove = async (sub: DashboardSubscription) => {
+    if (!sub.unsubscribe_token) {
+      toast.push(
+        "Esta suscripción no tiene token de baja — habrá que borrarla desde SQL.",
+        "error"
+      );
       return;
     }
-    onRemoved(id);
-    toast.push(`Eliminado: ${name}`, "info");
-  }
+    setRemoving(sub.id);
+    try {
+      const qs = new URLSearchParams({
+        token: sub.unsubscribe_token,
+        email: sub.email,
+        province_id: sub.province_slug,
+      });
+      const res = await fetch(`/api/subscribe?${qs.toString()}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        toast.push(data.error ?? `Error ${res.status}`, "error");
+        return;
+      }
+      onRemoved(sub.id);
+      toast.push(`Eliminado: ${sub.province_name}`, "info");
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "Error de red", "error");
+    } finally {
+      setRemoving(null);
+    }
+  };
 
   return (
-    <ul className="divide-y divide-white/5 overflow-hidden rounded-xl border border-white/5 bg-white/[0.02]">
+    <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-base/30">
       {subscriptions.map((sub) => (
         <li
           key={sub.id}
           className="flex flex-col items-start justify-between gap-3 px-4 py-4 sm:flex-row sm:items-center"
         >
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Badge tone="live">Activa</Badge>
-              <h3 className="text-sm font-semibold text-zinc-50">
+            <div className="mb-1 flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-green-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-400 ring-1 ring-green-400/30">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+                Activa
+              </span>
+              <h3 className="text-sm font-semibold text-textPrimary">
                 {sub.province_name}
               </h3>
             </div>
-            <p className="mt-1 text-xs text-zinc-500">
-              {sub.email} · creada el{" "}
-              {new Date(sub.created_at).toLocaleDateString("es-ES")}
+            <p className="font-mono text-xs text-textSecondary">
+              {sub.email} ·{" "}
+              {sub.created_at
+                ? new Date(sub.created_at).toLocaleDateString("es-ES", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                  })
+                : "—"}
             </p>
           </div>
 
-          <Button
+          <button
             type="button"
-            variant="danger"
-            size="sm"
-            loading={removing === sub.id}
-            onClick={() => remove(sub.id, sub.province_name)}
+            onClick={() => remove(sub)}
+            disabled={removing === sub.id}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs text-textSecondary transition-colors hover:border-red-400/50 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Eliminar
-          </Button>
+            {removing === sub.id ? "Eliminando..." : "Eliminar"}
+          </button>
         </li>
       ))}
     </ul>

@@ -5,10 +5,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useSupabase, useToast } from "@/components/Providers";
 import { Field, Input } from "@/components/ui/Field";
-import { Button } from "@/components/ui/Button";
 import { registerSchema, type RegisterInput } from "@/types";
 import { isSupabaseConfigured } from "@/types";
 
+/**
+ * RegisterForm — misma lógica que la versión anterior, ahora con tema
+ * dark fire (botón `bg-fire`, inputs `bg-base`).
+ */
 export function RegisterForm() {
   const router = useRouter();
   const supabase = useSupabase();
@@ -47,7 +50,7 @@ export function RegisterForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
       {!supabaseReady ? (
-        <div className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-3 text-sm text-orange-100">
+        <div className="border-amber/30 bg-amber/5 text-amber rounded-xl border px-4 py-3 text-sm">
           Supabase no está configurado en este entorno. El registro no
           persistirá hasta que configures las claves en{" "}
           <code className="font-mono text-xs">.env.local</code>.
@@ -97,9 +100,13 @@ export function RegisterForm() {
         />
       </Field>
 
-      <Button type="submit" loading={isSubmitting} className="w-full">
-        Crear cuenta
-      </Button>
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-fire px-4 text-sm font-semibold text-textPrimary transition-colors hover:bg-fire/80 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {isSubmitting ? "Creando..." : "Crear cuenta"}
+      </button>
     </form>
   );
 }

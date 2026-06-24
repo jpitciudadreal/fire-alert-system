@@ -1,138 +1,141 @@
 "use client";
 
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useSupabase, useToast } from "@/components/Providers";
-import { Field, Select } from "@/components/ui/Field";
-import { Button } from "@/components/ui/Button";
-import {
-  subscriptionSchema,
-  type SubscriptionInput,
-  type Subscription,
-  type Province,
-} from "@/types";
-import { findProvinceBySlug } from "@/lib/data/provinces";
+import { useState } from "react";
+import { useToast } from "@/components/Providers";
+import type { Province } from "@/lib/provinces";
 
-interface SubscriptionFormProps {
-  userId: string;
-  userEmail: string;
-  provinces: Province[];
-  existing: Subscription[];
-  onCreated: (subscription: Subscription) => void;
+interface DashboardSubscription {
+  id: string;
+  email: string;
+  province_slug: string;
+  province_name: string;
+  created_at: string;
 }
 
+interface SubscriptionFormProps {
+  userEmail: string;
+  provinces: Province[];
+  existing: DashboardSubscription[];
+  onCreated: (sub: DashboardSubscription) => void;
+}
+
+/**
+ * SubscriptionForm — formulario simple (provincia + email implícito del
+ * usuario). El POST va a `/api/subscribe` para mantener consistencia con
+ * la pestaña Suscribirse de la landing.
+ */
 export function SubscriptionForm({
-  userId,
   userEmail,
   provinces,
   existing,
   onCreated,
 }: SubscriptionFormProps) {
-  const supabase = useSupabase();
   const toast = useToast();
+  const [submitting, setSubmitting] = useState(false);
+  const [provinceSlug, setProvinceSlug] = useState("");
 
-  const availableProvinces = provinces.filter(
+  const available = provinces.filter(
     (p) => !existing.some((e) => e.province_slug === p.slug)
   );
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting },
-  } = useForm<SubscriptionInput>({
-    resolver: zodResolver(subscriptionSchema),
-    defaultValues: {
-      province_slug: availableProvinces[0]?.slug ?? "",
-    },
-  });
+  const submit = async () => {
+    if (!provinceSlug) return;
+    setSubmitting(true);
 
-  const onSubmit = async (data: SubscriptionInput) => {
-    const province = findProvinceBySlug(data.province_slug);
-    if (!province) {
-      toast.push("Provincia no encontrada", "error");
-      return;
+    try {
+      const res = await fetch("/api/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: userEmail,
+          province_id: provinceSlug,
+        }),
+      });
+      const data = (await res.json()) as
+        | {
+            ok: true;
+            subscription: DashboardSubscription;
+            already_active: boolean;
+          }
+        | { error: string };
+
+      if (!res.ok || "error" in data) {
+        toast.push(
+          "error" in data ? data.error : "Error al suscribirse",
+          "error"
+        );
+        return;
+      }
+
+      onCreated({
+        id: data.subscription.id,
+        email: data.subscription.email,
+        province_slug: data.subscription.province_slug,
+        province_name: data.subscription.province_name,
+        created_at: data.subscription.created_at ?? new Date().toISOString(),
+      });
+
+      toast.push(
+        data.already_active
+          ? `Ya estabas suscrito a ${data.subscription.province_name}`
+          : `Suscrito a ${data.subscription.province_name}`,
+        "success"
+      );
+      setProvinceSlug("");
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "Error de red", "error");
+    } finally {
+      setSubmitting(false);
     }
-
-    const payload = {
-      user_id: userId,
-      province_slug: province.slug,
-      province_name: province.name,
-      email: userEmail,
-    };
-
-    const { data: inserted, error } = await supabase
-      .from("subscriptions")
-      .insert([payload])
-      .select()
-      .single();
-
-    if (error) {
-      toast.push(error.message || "No se pudo crear la suscripción", "error");
-      return;
-    }
-
-    const newSub: Subscription = {
-      id: String((inserted as { id?: string } | null)?.id ?? cryptoId()),
-      user_id: payload.user_id,
-      province_slug: payload.province_slug,
-      province_name: payload.province_name,
-      email: payload.email,
-      created_at: new Date().toISOString(),
-    };
-
-    onCreated(newSub);
-    toast.push(`Suscrito a ${province.name}`, "success");
-    reset({ province_slug: "" });
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-3">
-      <Field
-        label="Añadir provincia"
-        htmlFor="province_slug"
-        error={errors.province_slug}
-        className="flex-1"
-      >
-        <Select
-          id="province_slug"
-          invalid={Boolean(errors.province_slug)}
-          disabled={availableProvinces.length === 0}
-          {...register("province_slug")}
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-3">
+      <div className="flex-1 space-y-1">
+        <label
+          htmlFor="province_slug"
+          className="block font-mono text-xs uppercase tracking-wide text-textSecondary"
         >
-          {availableProvinces.length === 0 ? (
-            <option value="">— Ya estás suscrito a todas —</option>
+          Añadir provincia
+        </label>
+        <select
+          id="province_slug"
+          value={provinceSlug}
+          onChange={(e) => setProvinceSlug(e.target.value)}
+          disabled={available.length === 0}
+          className="block w-full appearance-none rounded-xl border border-border bg-base px-3.5 py-2.5 pr-9 text-sm text-textPrimary outline-none transition-colors focus:border-fire disabled:opacity-50"
+          style={{
+            backgroundImage:
+              "url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%238B9DC3%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polyline points=%226 9 12 15 18 9%22/></svg>')",
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "right 12px center",
+            backgroundSize: "12px 12px",
+          }}
+        >
+          {available.length === 0 ? (
+            <option value="">— Ya estás suscrito a todas las disponibles —</option>
           ) : (
             <>
               <option value="" disabled>
                 Selecciona una provincia…
               </option>
-              {availableProvinces.map((p) => (
+              {available.map((p) => (
                 <option key={p.slug} value={p.slug}>
                   {p.name}
                 </option>
               ))}
             </>
           )}
-        </Select>
-      </Field>
-
-      <Button
-        type="submit"
-        loading={isSubmitting}
-        disabled={availableProvinces.length === 0}
-        className="sm:self-end"
+        </select>
+      </div>
+      <button
+        type="button"
+        onClick={submit}
+        disabled={!provinceSlug || submitting}
+        className="inline-flex h-10 items-center justify-center rounded-xl bg-fire px-4 text-sm font-semibold text-textPrimary transition-colors hover:bg-fire/80 disabled:cursor-not-allowed disabled:opacity-60 sm:self-end"
       >
-        Suscribirme
-      </Button>
-    </form>
+        {submitting ? "Suscribiendo..." : "Suscribirme"}
+      </button>
+    </div>
   );
-}
-
-// Stable client-safe fallback id used when Supabase returns no id (e.g. mock)
-function cryptoId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }

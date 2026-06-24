@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { PROVINCES_SORTED } from "@/lib/provinces";
+import type { FirePoint } from "@/types";
 
 /**
  * Tab "Historial" — réplica de `fire-alert-web/components/TabHistory.tsx`.
@@ -17,18 +18,6 @@ import { PROVINCES_SORTED } from "@/lib/provinces";
  * Mantenemos la estética densa de fire-alert-web: stats cards, tabla
  * expandible, badges FRP por colores.
  */
-
-interface FirePoint {
-  fire_id: string;
-  latitude: number;
-  longitude: number;
-  satellite: string;
-  confidence: "low" | "nominal" | "high";
-  brightness: number;
-  acq_date: string;
-  acq_time: string;
-  province?: string;
-}
 
 const CONF_LABEL: Record<string, string> = {
   high:    "Alta",

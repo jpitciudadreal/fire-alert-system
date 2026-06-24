@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import MapShell, { type FireMapView } from "@/components/map/MapShell";
 import { Badge } from "@/components/ui/Badge";
+import type { FirePoint, FireResponse } from "@/types";
 
 /**
  * Tab "Mapa en vivo" de fire-alert-web, adaptado a Leaflet.
@@ -18,27 +19,6 @@ import { Badge } from "@/components/ui/Badge";
  *   - Toolbar superior monospaced con `N focos activos` + botón
  *     `↻ Actualizar` (réplica del subproyecto).
  */
-
-interface FirePoint {
-  fire_id: string;
-  latitude: number;
-  longitude: number;
-  satellite: string;
-  confidence: "low" | "nominal" | "high";
-  brightness: number;
-  acq_date: string;
-  acq_time: string;
-  province?: string;
-}
-
-interface FireResponse {
-  source: "nasa-firms" | "mock";
-  isMock: boolean;
-  count: number;
-  fetchedAt: string;
-  fires: FirePoint[];
-  reason?: string;
-}
 
 interface TabMapProps {
   /**
@@ -101,7 +81,7 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
       [...fires]
         .sort((a, b) => sortKey(b).localeCompare(sortKey(a)))
         .slice(0, RECENT_COUNT),
-    [fires]
+    [fires],
   );
 
   return (
@@ -117,14 +97,7 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
         <div className="pointer-events-auto absolute left-3 right-3 top-3 z-[1000] flex flex-wrap items-center justify-between gap-2">
           {/* Estado de carga — pill izquierdo compacto. Se queda como
               feedback inmediato del estado de red/fetch. */}
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-surface/90 px-3 py-1.5">
-            <span
-              className={`h-2 w-2 rounded-full ${loading ? "bg-fire animate-pulse" : "bg-fire"}`}
-            />
-            <span className="font-mono text-xs text-textSecondary">
-              {loading ? "Cargando..." : `${fires.length} focos activos`}
-            </span>
-          </div>
+          <div></div>
 
           {/* Controles derechos (badge + toggle capa + actualizar).
               Agrupados para que `justify-between` los separe del pill
@@ -139,9 +112,14 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
               contenido sigue reflejando el estado real del fetch y
               número de detecciones.
             */}
-            <Badge tone="high">
-              {loading ? "Cargando…" : `${fires.length} focos activos`}
-            </Badge>
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface/90 px-3 py-1.5">
+              <span
+                className={`h-2 w-2 rounded-full ${loading ? "bg-fire animate-pulse" : "bg-fire"}`}
+              />
+              <span className="font-mono text-xs text-textSecondary">
+                {loading ? "Cargando..." : `${fires.length} focos activos`}
+              </span>
+            </div>
 
             {/*
               Toggle de capa base (dark ↔ satellite). El texto del botón
@@ -152,9 +130,7 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
             */}
             <button
               type="button"
-              onClick={() =>
-                setView(view === "dark" ? "satellite" : "dark")
-              }
+              onClick={() => setView(view === "dark" ? "satellite" : "dark")}
               title={
                 view === "dark"
                   ? "Cambiar a vista satélite"
@@ -208,7 +184,9 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
             {/* Header sticky del detalle — mismo borde inferior que el
                 estado "no-seleccionado" para coherencia visual. */}
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h2 className="font-semibold text-textPrimary">Detalle del foco</h2>
+              <h2 className="font-semibold text-textPrimary">
+                Detalle del foco
+              </h2>
               <button
                 onClick={() => setSelected(null)}
                 className="text-lg text-textSecondary hover:text-textPrimary"
@@ -218,50 +196,52 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
               </button>
             </div>
             <div className="animate-fade-in flex-1 overflow-y-auto p-4">
-            <div className="space-y-3">
-              {[
-                ["ID", selected.fire_id, true],
-                ["Satélite", selected.satellite],
-                ["Latitud", selected.latitude.toFixed(4)],
-                ["Longitud", selected.longitude.toFixed(4)],
-                ["Confianza", selected.confidence],
-                ["Brillo", `${selected.brightness.toFixed(1)} K`],
-                ["Fecha", selected.acq_date],
-                ["Hora (UTC)", selected.acq_time],
-                ["Provincia", selected.province ?? "—"],
-              ].map(([label, value, mono]) => (
-                <div
-                  key={String(label)}
-                  className="flex items-start justify-between gap-2"
-                >
-                  <span className="flex-shrink-0 text-xs text-textSecondary">
-                    {label}
-                  </span>
-                  <span
-                    className={`break-all text-right text-xs ${
-                      mono ? "font-mono text-amber" : "text-textPrimary"
-                    }`}
+              <div className="space-y-3">
+                {[
+                  ["ID", selected.fire_id, true],
+                  ["Satélite", selected.satellite],
+                  ["Latitud", selected.latitude.toFixed(4)],
+                  ["Longitud", selected.longitude.toFixed(4)],
+                  ["Confianza", selected.confidence],
+                  ["Brillo", `${selected.brightness.toFixed(1)} K`],
+                  ["Fecha", selected.acq_date],
+                  ["Hora (UTC)", selected.acq_time],
+                  ["Provincia", selected.province ?? "—"],
+                ].map(([label, value, mono]) => (
+                  <div
+                    key={String(label)}
+                    className="flex items-start justify-between gap-2"
                   >
-                    {String(value ?? "—")}
-                  </span>
-                </div>
-              ))}
+                    <span className="flex-shrink-0 text-xs text-textSecondary">
+                      {label}
+                    </span>
+                    <span
+                      className={`break-all text-right text-xs ${
+                        mono ? "font-mono text-amber" : "text-textPrimary"
+                      }`}
+                    >
+                      {String(value ?? "—")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <a
+                href={`https://www.google.com/maps?q=${selected.latitude},${selected.longitude}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 block w-full rounded-lg border border-fire/30 bg-fire/10 py-2 text-center text-sm text-fire transition-colors hover:bg-fire/20"
+              >
+                Ver en Google Maps →
+              </a>
             </div>
-            <a
-              href={`https://www.google.com/maps?q=${selected.latitude},${selected.longitude}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-4 block w-full rounded-lg border border-fire/30 bg-fire/10 py-2 text-center text-sm text-fire transition-colors hover:bg-fire/20"
-            >
-              Ver en Google Maps →
-            </a>
-          </div>
           </>
         ) : (
           <>
             <div className="border-b border-border px-4 py-3">
               <div className="flex items-center justify-between">
-                <h2 className="font-semibold text-textPrimary">Focos activos</h2>
+                <h2 className="font-semibold text-textPrimary">
+                  Focos activos
+                </h2>
                 <span className="font-mono text-[10px] uppercase tracking-wider text-textSecondary">
                   Top {RECENT_COUNT} recientes
                 </span>
@@ -334,7 +314,7 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
                   className="block w-full rounded-lg border border-border bg-base py-2.5 text-center text-sm text-textPrimary transition-colors hover:border-fire hover:bg-fire/10 hover:text-fire"
                 >
                   {fires.length > RECENT_COUNT ? (
-                    <>Ver más → ({(fires.length - RECENT_COUNT)}+ en historial)</>
+                    <>Ver más → ({fires.length - RECENT_COUNT}+ en historial)</>
                   ) : fires.length === 0 ? (
                     <>Ver historial → (sin detecciones hoy)</>
                   ) : (

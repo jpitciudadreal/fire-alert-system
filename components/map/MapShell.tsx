@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import type { ComponentType } from "react";
-import type { FireMapProps, FireMapHeight } from "./FireMap";
+import type { FireMapProps, FireMapHeight, FireMapView } from "./FireMap";
 
 /**
  * Client wrapper que difiere la carga del mapa Leaflet hasta que el
@@ -25,8 +25,6 @@ export default function MapShell(props: FireMapProps) {
   return <FireMap {...props} />;
 }
 
-export type { FireMapProps, FireMapHeight, FireMapView };
-
 function MapShellSkeleton() {
   // Renderiza un placeholder con la MISMA forma visual que el mapa real
   // (borde + radius + fondo oscuro + spinner central). Usamos
@@ -42,3 +40,11 @@ function MapShellSkeleton() {
     </div>
   );
 }
+
+// Re-exports públicos: los consumidores importan la API desde MapShell
+// (fachada) en lugar de desde FireMap (que es interno). Importante:
+// `export type { ... }` aquí (sin `from`) reusa los bindings ya en
+// scope gracias al `import type` de arriba. Si hubiera usado
+// `export type { X } from "./FireMap"` (pass-through), `X` no estaría
+// disponible como local y TS fallaría en la línea 16.
+export type { FireMapProps, FireMapHeight, FireMapView };

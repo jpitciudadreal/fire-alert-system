@@ -4,7 +4,7 @@ import { isSupabaseConfigured } from "@/types";
 
 /**
  * Server-side Supabase client. Used inside Server Components, Route
- * Handlers and Server Actions. Pairs with `middleware.ts` which keeps the
+ * Handlers and Server Actions. Pairs with `proxy.ts` (raíz) which keeps the
  * session cookies refreshed.
  *
  * When Supabase is not configured this returns a deterministic mock.
@@ -31,7 +31,7 @@ export async function createSupabaseServerClient() {
             });
           } catch {
             // setAll called from a Server Component which cannot set cookies;
-            // safe to ignore — middleware refreshes them on every request.
+            // safe to ignore — proxy.ts refreshes them on every request.
           }
         },
       },

@@ -6,6 +6,9 @@ import { isSupabaseConfigured } from "@/types";
  * Refreshes the Supabase auth cookies on every request. Required by
  * `@supabase/ssr` for both Server Components and Route Handlers so that
  * expired tokens are silently renewed.
+ *
+ * Este helper se llama desde `/proxy.ts` (raíz) — la convención
+ * "middleware" de Next quedó renombrada a "proxy" en Next 16.
  */
 export async function updateSupabaseSession(request: NextRequest) {
   let response = NextResponse.next({ request });

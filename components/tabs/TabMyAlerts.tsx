@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { getProvince } from "@/lib/provinces";
+import type { FirePoint, FireResponse } from "@/types";
 
 /**
  * Tab "Mis alertas" — réplica de `fire-alert-web/components/TabMyAlerts.tsx`.
@@ -20,23 +21,6 @@ interface Subscription {
   unsubscribe_token?: string;
   confirmed?: boolean;
   created_at: string;
-}
-
-interface FirePoint {
-  fire_id: string;
-  latitude: number;
-  longitude: number;
-  province?: string;
-  confidence: "low" | "nominal" | "high";
-  brightness: number;
-  acq_date: string;
-  acq_time: string;
-}
-
-interface FireResponse {
-  fires: FirePoint[];
-  isMock?: boolean;
-  reason?: string;
 }
 
 function buildUnsubUrl(sub: Subscription): string | null {

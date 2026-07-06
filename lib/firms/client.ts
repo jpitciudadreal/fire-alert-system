@@ -1,4 +1,4 @@
-import { detectProvince, MOCK_FIRES } from "@/lib/data/provinces";
+import { detectProvince } from "@/lib/data/provinces";
 import type { ConfidenceLevel, FirePoint, FireResponse } from "@/types";
 import { isFirmsConfigured } from "@/types";
 
@@ -22,8 +22,7 @@ const FIRMS_SOURCE = "VIIRS_SNPP_NRT";
 const SPAIN_BBOX = { west: -18, south: 27, east: 5, north: 44 } as const;
 
 /** NASA FIRMS /api/area path-seg form: `W,S,E,N`. */
-const FIRMS_REGION =
-  `${SPAIN_BBOX.west},${SPAIN_BBOX.south},${SPAIN_BBOX.east},${SPAIN_BBOX.north}`;
+const FIRMS_REGION = `${SPAIN_BBOX.west},${SPAIN_BBOX.south},${SPAIN_BBOX.east},${SPAIN_BBOX.north}`;
 
 /**
  * Cheap point-in-bbox check against `SPAIN_BBOX`. Used as a defensive
@@ -39,45 +38,46 @@ function isInSpain(lat: number, lng: number): boolean {
     lat <= SPAIN_BBOX.north
   );
 }
+
 /** How many days back to look for active fires (max 10 for NRT) */
 const FIRMS_DAYS = 1;
 
 /**
- * Fetch active wildfires for Spain from NASA FIRMS. Falls back to a
- * deterministic mock dataset when no API key is configured so the app
- * still has something visually useful to display.
+ * Fetch active wildfires for Spain from NASA FIRMS.
  *
- * The `reason` field communicates *why* the response was mocked so the
- * home page can show an informative banner instead of silently lying about
- * the data source.
+ * Failure modes are surfaced via the `reason` field along with an empty
+ * `fires` array — the app NEVER serves synthetic data. Specifically:
+ *
+ *   - No API key  → `reason: "no-key"`. UI shows an actionable
+ *                   "configura NASA_FIRMS_API_KEY" message.
+ *   - 401/403     → `reason: "invalid-key"`. The upstream rejected the key.
+ *   - Other HTTP/network failure → `reason: "network"`.
+ *   - Empty FIRMS answer (rows === 0) → `reason: "empty"`. That's a real
+ *                     observation: no fires in Spain in the requested window.
+ *   - Otherwise → `reason` absent and `fires` contains the FIRMS rows
+ *                     with province attribution.
+ *
+ * The previous behaviour (a 20-point mock dataset served as a silent
+ * fallback) has been removed because it conflated real-time monitoring
+ * with a curated demo and made the page claim to show actual detections.
  */
 export async function getFires(): Promise<FireResponse> {
   if (!isFirmsConfigured()) {
-    // Single source for both `count` and `fires` so the two never
-    // drift apart (e.g. if a future mock point lands outside Spain).
-    const spainMock = MOCK_FIRES.map(enrichProvince).filter((f) =>
-      isInSpain(f.latitude, f.longitude)
-    );
     return {
-      source: "mock",
-      isMock: true,
+      source: "nasa-firms",
       reason: "no-key",
-      count: spainMock.length,
+      count: 0,
       fetchedAt: new Date().toISOString(),
-      fires: spainMock,
+      fires: [],
     };
   }
 
   try {
     const raw = await fetchFiresFromFirms();
 
-    // Honour the API's empty answer as real data: the upstream works
-    // fine, there just aren't any fires in Spain right now. DON'T fall
-    // back to mock — that would falsely display fires on the map.
     if (raw.length === 0) {
       return {
         source: "nasa-firms",
-        isMock: false,
         reason: "empty",
         count: 0,
         fetchedAt: new Date().toISOString(),
@@ -87,7 +87,6 @@ export async function getFires(): Promise<FireResponse> {
 
     return {
       source: "nasa-firms",
-      isMock: false,
       count: raw.length,
       fetchedAt: new Date().toISOString(),
       fires: raw.map(enrichProvince),
@@ -96,23 +95,24 @@ export async function getFires(): Promise<FireResponse> {
     const message = err instanceof Error ? err.message : String(err);
     // Keep in sync with the throw site in fetchFiresFromFirms below.
     const reason: FireResponse["reason"] = /responded with (401|403)/i.test(
-      message
+      message,
     )
       ? "invalid-key"
       : "network";
 
     if (process.env.NODE_ENV !== "production") {
-      // Helpful dev-only breadcrumb when searching for "why is it showing mock?"
-      console.error("[firms] falling back to mock:", message);
+      // Helpful dev-only breadcrumb when searching for "why is it empty?".
+      console.error(`[firms] ${reason} — ${message}`);
     }
 
+    // Empty dataset + reason. We never reach for a synthetic dataset —
+    // the UI renders an actionable message based on `reason`.
     return {
-      source: "mock",
-      isMock: true,
+      source: "nasa-firms",
       reason,
-      count: MOCK_FIRES.length,
+      count: 0,
       fetchedAt: new Date().toISOString(),
-      fires: MOCK_FIRES.map(enrichProvince),
+      fires: [],
     };
   }
 }
@@ -185,7 +185,7 @@ function parseCsv(csv: string): FirePoint[] {
       longitude: lng,
       satellite: cols[satelliteIdx] ?? FIRMS_SOURCE,
       confidence: normalizeConfidence(cols[confidenceIdx]),
-      brightness: brightnessIdx >= 0 ? (Number(cols[brightnessIdx]) || 0) : 0,
+      brightness: brightnessIdx >= 0 ? Number(cols[brightnessIdx]) || 0 : 0,
       scan_km: Number(cols[scanIdx]) || 0,
       track_km: Number(cols[trackIdx]) || 0,
       acq_date: cols[acqDateIdx] ?? "",

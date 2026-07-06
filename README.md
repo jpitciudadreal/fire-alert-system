@@ -33,7 +33,7 @@ npm run dev
 # 4. Open http://localhost:3000
 ```
 
-> **Without `.env.local`** the app still works — the live map shows the curated `MOCK_FIRES` dataset and the dashboard presents a friendly configuration prompt.
+> **Without `NASA_FIRMS_API_KEY`** the map shows an empty dataset with an explicit “configura tu API key” footer — the app never serves fake data. A real `getFires()` round-trip with an empty answer (`reason: "empty"`) is also rendered as such, so the page always reflects what's actually in FIRMS at fetch time.
 
 ---
 
@@ -48,6 +48,7 @@ npm run dev
 | Forms        | react-hook-form 7 + zod 4 (`zodResolver`)          |
 | Auth + DB    | Supabase (`@supabase/ssr` 0.12) with RLS           |
 | External API | NASA FIRMS (`/api/area/csv` CSV endpoint)          |
+| Email        | Gmail SMTP (port 465, App Password)                |
 
 ---
 
@@ -59,7 +60,8 @@ npm run dev
 │   ├── (auth)/          # /login & /register share a centred card layout
 │   ├── api/
 │   │   ├── auth/signout/route.ts
-│   │   └── fires/route.ts            # Proxies NASA FIRMS, falls back to mock
+│   │   ├── check-fires/run/route.ts # Auth proxy → triggers check-fires Edge Function
+│   │   └── fires/route.ts           # Proxies NASA FIRMS, falls back to mock
 │   ├── dashboard/page.tsx           # Server component, gated by Supabase auth
 │   ├── layout.tsx
 │   └── page.tsx                     # Landing with map + stats panel
@@ -78,7 +80,7 @@ npm run dev
 ├── supabase/
 │   ├── schema.sql                   # Tables, indexes, RLS policies
 │   ├── cron.sql                     # pg_cron schedule for the alert Edge Function
-│   └── functions/check-fires/       # Deno Edge Function: FIRMS + subscriptions + Resend
+│   └── functions/check-fires/       # Deno Edge Function: FIRMS + subscriptions + Gmail SMTP
 ├── types/index.ts                   # Shared types + Zod schemas
 ├── middleware.ts                    # Refreshes Supabase session per request
 └── .env.local.example
@@ -94,6 +96,7 @@ Create `.env.local`:
 NEXT_PUBLIC_SUPABASE_URL=""
 NEXT_PUBLIC_SUPABASE_ANON_KEY=""
 NASA_FIRMS_API_KEY=""
+CRON_SECRET=""             # SAME value as `supabase secrets set CRON_SECRET`
 ```
 
 | Variable                       | Required | Scope          | Notes                                            |
@@ -101,6 +104,7 @@ NASA_FIRMS_API_KEY=""
 | `NEXT_PUBLIC_SUPABASE_URL`     | optional | client+server  | Gracefully handled when missing (demo mode)      |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY`| optional | client+server  | Same                                             |
 | `NASA_FIRMS_API_KEY`           | optional | server only    | Free key via https://firms.modaps.eosdis.nasa.gov/api/ |
+| `CRON_SECRET`                  | optional | server only    | Must equal the Edge Function secret. Enables the "Ejecutar detector" button in `/dashboard` (see `/api/check-fires/run`). |
 
 ### NASA FIRMS API
 
@@ -121,52 +125,67 @@ Execute [`supabase/schema.sql`](./supabase/schema.sql) in the SQL editor of your
 - Row Level Security policies so users only see their own data
 - (the cron schedule lives in [`supabase/cron.sql`](./supabase/cron.sql), run separately)
 
-### 📨 Email alerts — Edge Function + Resend
+### 📨 Email alerts — Edge Function + Gmail SMTP (App Password)
 
 Active subscribers receive digest emails whenever new fires appear in their province. The flow:
 
 1. `pg_cron` (`*/15 * * * *`) calls the **`check-fires` Edge Function** via `pg_net` every 15 minutes.
 2. The function fetches FIRMS data, filters to Spain, attaches each fire to its province bbox, looks up matching subscriptions.
-3. It dedupes against `alert_history` (unique constraint on `(subscription_id, fire_id)`), sends a single digest email per (subscription, run) via **Resend**, then records each delivery.
+3. It dedupes against `alert_history` (unique constraint on `(subscription_id, fire_id)`), sends a single digest email per (subscription, run) through **Gmail SMTP** (implicit TLS on port 465, no third-party email service, no OAuth dance), then records each delivery.
 
-#### One-time setup
+#### One-time Gmail App Password setup
 
-```sh
-# 1. Install the Supabase CLI (https://supabase.com/docs/guides/cli)
-brew install supabase/tap/supabase           # macOS
-scoop install supabase                       # Windows
+You send email *out of your own Gmail account* — the SMTP submission service replaces the earlier OAuth flow with a single 16-character App Password. There is no consent screen, no test-user list, no domain verification.
 
-# 2. Sign up at https://resend.com and grab an API key (free tier covers 100/day)
+**Prerequisites (one Gmail account):**
+- 2-Step Verification **enabled** — required before any App Password can be issued.
 
-# 3. Deploy the Edge Function (default keeps Supabase's JWT-gateway
-#    verification on top of our handler's service-role bearer check;
-#    both layers trust the SUPABASE_SERVICE_ROLE_KEY)
-supabase functions deploy check-fires
+**Steps:**
+1. Generate the App Password
+   - Open <https://myaccount.google.com/apppasswords> while signed in to the Gmail account that will send alerts.
+   - Click **Create**, give it any name (e.g. *Fire Alert Cron*), pick app = **Mail**.
+   - Copy the 16-character password — Google only shows it once.
+2. Edge Function secrets
+   ```sh
+   supabase functions deploy check-fires
 
-# 4. Configure Edge Function secrets
-supabase secrets set \
-  FIRMS_API_KEY=your-nasa-key \
-  RESEND_API_KEY=re_xxx \
-  RESEND_FROM="Fire Alert <alerts@yourdomain>" \
-  FIRM_ALERTS_BASE_URL=https://fire-alerts.example.com
-# (Add `app.functions_secret=<random>` too — re-used by cron.sql below.)
+   supabase secrets set \
+     CRON_SECRET=<strong-random-string> \
+     FIRMS_API_KEY=your-nasa-key \
+     GMAIL_FROM='Fire Alert <your-account@gmail.com>' \
+     GMAIL_APP_PASSWORD=abcd efgh ijkl mnop \
+     FIRM_ALERTS_BASE_URL=https://fire-alerts.example.com
+   ```
+   `GMAIL_FROM` MUST be an address owned by the Gmail account that issued the App Password — Gmail rejects mismatches on the SMTP envelope.
+3. Enable extensions + schedule the cron (one-shot in the Supabase SQL editor):
+   ```sql
+   create extension if not exists pg_cron;
+   create extension if not exists pg_net;
+   -- Mirror CRON_SECRET in Vault so pg_cron can read it via
+   -- vault.decrypted_secrets (see supabase/cron.sql for the full script).
+   ```
+   Then run [`supabase/cron.sql`](./supabase/cron.sql) (replace `<project-ref>` with your Supabase subdomain).
 
-# 5. Enable extensions + schedule the cron (one-shot in SQL editor)
-create extension if not exists pg_cron;
-create extension if not exists pg_net;
-# Then run supabase/cron.sql (replace <project-ref> with your subdomain).
-```
+> ⚠️ If the sending Gmail address ever changes, regenerate the App Password and update `GMAIL_APP_PASSWORD` — the old one stops working for the new account.
 
 #### Manual trigger (testing)
 
-```sh
-curl -X POST \
-  "https://<project-ref>.supabase.co/functions/v1/check-fires" \
-  -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-  -H "Content-Type: application/json"
-# Returns a JSON summary like:
-# {"ok":true,"fetched_fires":82,"emails_sent":3,"emails_skipped_idempotent":12,...}
-```
+There are two ways to run `check-fires` outside the cron schedule:
+
+1. **From the dashboard.** Once you sign in, the `/dashboard` page shows a **"🔥 Ejecutar check-fires"** button. Hitting it invokes `POST /api/check-fires/run`, which authenticates you as a Supabase user, then calls the Edge Function with the server-side `CRON_SECRET` (the secret never touches the browser bundle). The resulting `AlertRunSummary` is rendered in the same card with a status badge (`OK` / `Parcial` / `Con errores`), a grid of stats (fetched / in Spain / with province / emails sent), and the `run_id` so you can correlate with Edge Function logs.
+2. **Direct `curl` against the function URL.** Use the same `CRON_SECRET` value (NOT the service-role key, the function strictly checks `Authorization: Bearer <CRON_SECRET>`):
+
+   ```sh
+   curl -X POST \
+     "https://<project-ref>.supabase.co/functions/v1/check-fires" \
+     -H "Authorization: Bearer $CRON_SECRET" \
+     -H "Content-Type: application/json" \
+     -d '{}'
+   # Returns a JSON summary like:
+   # {"ok":true,"fetched_fires":82,"emails_sent":3,"emails_skipped_idempotent":12,...}
+   ```
+
+The flow is idempotent — re-running the detector within minutes will NOT re-email subscribers that already received a digest for the same fire, thanks to the `(subscription_id, fire_id)` unique index on `alert_history`.
 
 #### Idempotency
 
@@ -177,12 +196,13 @@ The `(subscription_id, fire_id)` unique index on `alert_history` is the only sou
 | Secret                  | Where                                    | Notes                                              |
 |-------------------------|------------------------------------------|----------------------------------------------------|
 | `FIRMS_API_KEY`         | `supabase secrets set`                   | Same key as the Next.js app reads from `.env.local` |
-| `RESEND_API_KEY`        | `supabase secrets set`                   | From resend.com                                    |
-| `RESEND_FROM`           | `supabase secrets set`                   | Verified sender identity                           |
+| `GMAIL_FROM`            | `supabase secrets set`                   | Must be an address owned by the Gmail account that issued the App Password, e.g. `Fire Alert <your-account@gmail.com>` |
+| `GMAIL_APP_PASSWORD`    | `supabase secrets set`                   | 16-char password from myaccount.google.com/apppasswords (2FA must be enabled) |
 | `FIRM_ALERTS_BASE_URL`  | `supabase secrets set` (optional)        | Defaults to `http://localhost:3000` for dev        |
-| `app.functions_secret`  | `supabase secrets set`                   | Random 32+ char string; used in `cron.sql` Authorization header |
 | `SUPABASE_URL`          | auto-injected                            | Per-function env                                   |
 | `SUPABASE_SERVICE_ROLE_KEY` | auto-injected                         | Bypasses RLS — endpoint auth-gated manually       |
+
+> Gmail sending limits: ~500 emails/day on a free Gmail account, up to ~2,000/day on Google Workspace. If the subscriber list grows past either ceiling, rotate to a Workspace account or move the digest pipeline to a dedicated transactional provider.
 
 ---
 
@@ -195,6 +215,7 @@ The `(subscription_id, fire_id)` unique index on `alert_history` is the only sou
 | `/register`      | Client          | Supabase email/password sign-up                  |
 | `/dashboard`     | Server (auth)   | Subscription CRUD (RLS-protected)                |
 | `/api/fires`     | Route handler   | Proxies NASA FIRMS + cache                       |
+| `/api/check-fires/run` | Route handler (auth) | Server-side proxy that triggers the Edge Function with `CRON_SECRET`. Used by the "Ejecutar detector" button in `/dashboard`. |
 | `/api/auth/signout` | Route handler | Form-target sign-out                             |
 
 ---
@@ -212,10 +233,10 @@ npm start      # next start (after build)
 
 ## 🚧 Roadmap / TODO
 
-- [x] Resend integration + Supabase Edge Function `check-fires`
+- [x] Gmail SMTP (App Password) integration + Supabase Edge Function `check-fires`
 - [x] pg_cron schedule every 15 min (see `supabase/cron.sql`)
+- [x] Manual "Run now" button in dashboard (`ManualRunButton` + server-side proxy `/api/check-fires/run`)
 - [ ] Alert history panel in `/dashboard` (currently a `Pronto` banner — backed by `alert_history`)
-- [ ] Manual "Run now" button in dashboard (server-side proxy so the service role stays server-only)
 - [ ] Multi-language (i18n) — currently ES-only strings
 - [ ] Realtime updates via Supabase channels
 - [ ] Province-level heat trend chart

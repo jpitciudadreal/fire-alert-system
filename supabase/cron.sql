@@ -6,8 +6,8 @@
 --   2. Configuring Edge Function secrets:
 --        supabase secrets set CRON_SECRET=<strong-random-string>
 --        supabase secrets set FIRMS_API_KEY=<map-key-from-firms.modaps.eosdis.nasa.gov>
---        supabase secrets set RESEND_API_KEY=<resend-api-key>
---        supabase secrets set RESEND_FROM='Fire Alert <noreply@firealerts.app>'
+--        supabase secrets set GMAIL_FROM='Fire Alert <your-account@gmail.com>'
+--        supabase secrets set GMAIL_APP_PASSWORD=<16-char-app-password>
 --   3. Mirroring the CRON_SECRET in Supabase Vault so pg_cron can read it:
 --        select vault.create_secret(
 --          '<strong-random-string>',  -- must equal the Edge Function secret
@@ -51,17 +51,17 @@ end $$;
 -- (or rotating the existing Vault secret with `vault.rotate_secret` on
 -- Supabase managed Vaults).
 --
--- `timeout_milliseconds` makes net.http_post give up after 5 s instead
--- of spilling into request queues if the Edge Function is unreachable
--- (a frozen function would otherwise silently accumulate rows in
--- `net._http_response`).
+-- `timeout_milliseconds` makes net.http_post give up instead of
+-- spilling into request queues if the Edge Function is unreachable.
+-- Gmail SMTP is fast (one TLS handshake + ~6 round-trips), so 15s is
+-- plenty for a few dozen subscribers — bump if your fan-out grows.
 -- ------------------------------------------------------------------------
 select cron.schedule(
   'check-new-fires',
   '*/15 * * * *', -- every 15 minutes
   $$
     select net.http_post(
-      url     := 'https://<project-ref>.supabase.co/functions/v1/check-fires',
+      url     := 'https://bbggrzkekjmgtwtuxfcg.supabase.co/functions/v1/check-fires',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
         'Authorization', 'Bearer ' || (
@@ -71,7 +71,7 @@ select cron.schedule(
         )
       ),
       body    := '{}'::jsonb,
-      timeout_milliseconds := 5000
+      timeout_milliseconds := 15000
     );
   $$
 );
@@ -98,5 +98,5 @@ select cron.schedule(
 --       )
 --     ),
 --     body    := '{}'::jsonb,
---     timeout_milliseconds := 5000
+--     timeout_milliseconds := 15000
 --   );

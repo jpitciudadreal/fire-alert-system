@@ -4,7 +4,8 @@
 // Triggered by Supabase pg_cron (or manual `curl` with the service-role
 // bearer) every N minutes. Detects new wildfires in Spain, matches them
 // to active subscriptions, sends a digest email per (subscription,
-// run) via Resend, and records each delivery in `alert_history` for
+// run) via Gmail SMTP using an App Password (no OAuth dance, no
+// consent screens), and records each delivery in `alert_history` for
 // idempotency.
 //
 // Self-contained by design:
@@ -20,8 +21,16 @@
 //                            name `cron_secret` so pg_cron can read it
 //                            via `vault.decrypted_secrets`.
 //   FIRMS_API_KEY          — NASA FIRMS map key
-//   RESEND_API_KEY         — Resend API key
-//   RESEND_FROM            — Sender identity, e.g. "Fire Alert <noreply@firealerts.app>"
+//   GMAIL_FROM             — Sender identity, e.g.
+//                            "Fire Alert <your-account@gmail.com>".
+//                            The mailbox address MUST belong to the
+//                            Gmail account that issued `GMAIL_APP_PASSWORD`
+//                            (Gmail rejects mismatches).
+//   GMAIL_APP_PASSWORD     — 16-char App Password issued under the
+//                            same Gmail account at
+//                            https://myaccount.google.com/apppasswords.
+//                            Requires 2-Step Verification to be enabled
+//                            on the account first.
 //   FIRM_ALERTS_BASE_URL   — Public app URL for the dashboard link in
 //                            emails. Defaults to http://localhost:3000.
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY — auto-injected by Supabase.
@@ -512,33 +521,237 @@ function renderEmail(
 }
 
 /* -------------------------------------------------------------------------- */
-/*                              Resend delivery                               */
+/*                              Gmail SMTP delivery                           */
 /* -------------------------------------------------------------------------- */
+/**
+ * Plain UTF-8 → standard base64. Deno's `btoa` throws on non-ASCII
+ * bytes, so the string is first encoded to a binary string via
+ * `TextEncoder`. Used by both the body (chunk-wrapped for SMTP lines)
+ * and the MIME-encoded subject.
+ */
+function utf8ToBase64(input: string): string {
+  const bytes = new TextEncoder().encode(input);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
 
+/**
+ * Mime-encode a subject line per RFC 1342 (`=?utf-8?B?...?=`) so emoji
+ * and accented characters survive SMTP. The encoded-word IS a single
+ * line, so we do NOT chunk-wrap here.
+ */
+function encodeMimeHeaderSubject(s: string): string {
+  return `=?utf-8?B?${utf8ToBase64(s)}?=`;
+}
+
+/**
+ * Chunk-wrapped base64 (76-char lines per RFC 2045) for the message
+ * body. RFC 5321 caps SMTP lines at 998 chars; we stay well under it.
+ */
+function utf8ToBase64Chunked(input: string, lineLen = 76): string {
+  const full = utf8ToBase64(input);
+  const lines: string[] = [];
+  for (let i = 0; i < full.length; i += lineLen) {
+    lines.push(full.slice(i, i + lineLen));
+  }
+  return lines.join("\r\n");
+}
+
+/**
+ * Build the RFC 5322 MIME message we'll hand to SMTP DATA. CRLF line
+ * endings throughout. CTE=base64 keeps the body 7bit-clean on the wire
+ * (Gmail accepts any CTE, but base64 is the universally-portable one).
+ */
+function buildMimeMessage(
+  from: string,
+  to: string,
+  subject: string,
+  html: string
+): string {
+  const headers = [
+    `From: ${from}`,
+    `To: ${to}`,
+    `Subject: ${encodeMimeHeaderSubject(subject)}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: text/html; charset=UTF-8`,
+    `Content-Transfer-Encoding: base64`,
+  ];
+  return headers.join("\r\n") + "\r\n\r\n" + utf8ToBase64Chunked(html) + "\r\n";
+}
+
+/**
+ * Pull a bare `addr@x` out of `"Name <addr@x>"`, `"<addr@x>"`, or
+ * `"addr@x"` — used as the SMTP envelope sender / recipient and as
+ * the AUTH LOGIN identity (Gmail SMTP requires a bare address there).
+ */
+function extractEmailAddress(display: string): string {
+  const m = display.match(/<([^>]+)>/);
+  return ((m ? m[1] : display)).trim().toLowerCase();
+}
+
+/**
+ * Minimal SMTP-over-implicit-TLS client. Wraps `Deno.connectTls(465)`
+ * and exposes a tiny command/response API that absorbs RFC 5321's
+ * multi-line replies: lines starting with `digit-digit-digit-` are
+ * continuations; the final line uses `digit-digit-digit-space-text`.
+ *
+ * No external dependencies — keeps the Edge Function bundle small and
+ * eliminates a class of "library changed upstream" supply-chain risk.
+ */
+class SmtpConn {
+  private readonly conn: Deno.TlsConn;
+  private readonly decoder = new TextDecoder();
+  private buf = new Uint8Array(8192);
+  private bufLen = 0;
+  private bufStart = 0;
+
+  constructor(conn: Deno.TlsConn) {
+    this.conn = conn;
+  }
+
+  /** Transmit a single SMTP line (\r\n appended). Handles short writes
+   *  the underlying TLS socket might report. */
+  async send(line: string): Promise<void> {
+    const bytes = new TextEncoder().encode(line + "\r\n");
+    let written = 0;
+    while (written < bytes.length) {
+      const n = await this.conn.write(bytes.subarray(written));
+      if (!n || n <= 0) throw new Error("SMTP connection closed during write");
+      written += n;
+    }
+  }
+
+  private async readLine(): Promise<string> {
+    while (true) {
+      const view = this.buf.subarray(this.bufStart, this.bufLen);
+      for (let i = 0; i < view.length - 1; i++) {
+        if (view[i] === 0x0d && view[i + 1] === 0x0a) {
+          const lineBytes = view.subarray(0, i);
+          this.bufStart += i + 2;
+          return this.decoder.decode(lineBytes);
+        }
+      }
+      // Need more bytes from the socket.
+      const n = await this.conn.read(this.buf);
+      if (n === null) {
+        throw new Error("SMTP connection closed during read");
+      }
+      this.bufLen = n;
+      this.bufStart = 0;
+    }
+  }
+
+  /** Read a multi-line response; returns when the terminating
+   *  `nnn-space-text` line is consumed. */
+  async readResponse(): Promise<{ code: number; lines: string[] }> {
+    const lines: string[] = [];
+    while (true) {
+      const line = await this.readLine();
+      lines.push(line);
+      if (line.length >= 4) {
+        const code = line.slice(0, 3);
+        const sep = line.charAt(3);
+        if (/^\d{3}$/.test(code) && (sep === " " || sep === "-")) {
+          if (sep === " ") {
+            return { code: parseInt(code, 10), lines };
+          }
+          continue;
+        }
+      }
+      throw new Error(`Malformed SMTP response: ${JSON.stringify(lines)}`);
+    }
+  }
+
+  /** Send `cmd`, read the response, throw if reply code not in
+   *  `expected`. Returns the joined reply text on success. */
+  async command(cmd: string, expected: readonly number[]): Promise<string> {
+    await this.send(cmd);
+    const { code, lines } = await this.readResponse();
+    if (!expected.includes(code)) {
+      throw new Error(`SMTP "${cmd}" → ${code} ${lines.join(" | ")}`);
+    }
+    return lines.join("\r\n");
+  }
+
+  close(): void {
+    try { this.conn.close(); } catch { /* idempotent */ }
+  }
+}
+
+/**
+ * Send one digest email via Gmail SMTP using App Password credentials.
+ *
+ * The App Password replaces the OAuth2 dance entirely: enable
+ * 2-Step Verification once on the Gmail account, generate a 16-char
+ * App Password at https://myaccount.google.com/apppasswords, paste
+ * it into the `GMAIL_APP_PASSWORD` Supabase secret. No consent screen,
+ * no test-user list, no domain verification.
+ *
+ * One fresh TLS connection per email — Gmail does not rate-limit the
+ * submission service at the volumes this app handles (< 2k/day).
+ * Bounded retry on transient network errors only; auth / protocol
+ * failures fail fast because retrying doesn't help.
+ */
 async function sendEmail(
   to: string,
   subject: string,
   html: string
 ): Promise<string> {
-  const apiKey = Deno.env.get("RESEND_API_KEY");
-  const from = Deno.env.get("RESEND_FROM");
-  if (!apiKey) throw new Error("RESEND_API_KEY secret not configured");
-  if (!from) throw new Error("RESEND_FROM secret not configured");
+  const from = Deno.env.get("GMAIL_FROM");
+  const password = Deno.env.get("GMAIL_APP_PASSWORD");
+  if (!from) throw new Error("GMAIL_FROM secret not configured");
+  if (!password) throw new Error("GMAIL_APP_PASSWORD secret not configured");
 
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ from, to: [to], subject, html }),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Resend ${res.status}: ${text.slice(0, 200)}`);
+  const username = extractEmailAddress(from);
+  const recipient = extractEmailAddress(to);
+  const mime = buildMimeMessage(from, to, subject, html);
+
+  // Codes that should never trigger a retry — config / auth / protocol.
+  const NON_RETRYABLE = /535|534|503|501|500|Malformed|Authentication credentials/;
+
+  const MAX_ATTEMPTS = 2;
+  for (let attempt = 1; ; attempt++) {
+    const sock = await Deno.connectTls({
+      hostname: "smtp.gmail.com",
+      port: 465,
+    });
+    const s = new SmtpConn(sock);
+    try {
+      await s.readResponse(); // server greeting (220)
+      await s.command(`EHLO fire-alerts.local`, [250]);
+      await s.command(`AUTH LOGIN`, [334]);
+      await s.command(btoa(username), [334]);
+      await s.command(btoa(password), [235]);
+      await s.command(`MAIL FROM:<${username}>`, [250]);
+      await s.command(`RCPT TO:<${recipient}>`, [250]);
+      await s.command(`DATA`, [354]);
+      // SMTP message body terminated by `\r\n.\r\n` per RFC 5321 §4.1.1.
+      await s.send(mime + "\r\n.\r\n");
+      const dataResp = await s.readResponse();
+      if (dataResp.code !== 250) {
+        throw new Error(
+          `SMTP DATA rejected (${dataResp.code}): ${
+            dataResp.lines.join(" | ")
+          }`,
+        );
+      }
+      await s.command(`QUIT`, [221]);
+
+      // Gmail's 250 reply on queued mail includes the message-id in
+      // angle brackets — surface it for log correlation.
+      const blob = dataResp.lines.join("\r\n");
+      const idMatch = blob.match(/<[^>]+@[^>]+>/);
+      return idMatch ? idMatch[0] : "(queued)";
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (NON_RETRYABLE.test(msg) || attempt >= MAX_ATTEMPTS) throw err;
+      // Transient (network drop, 421/451) — brief backoff and retry.
+      await new Promise((r) => setTimeout(r, 400 * attempt));
+    } finally {
+      s.close();
+    }
   }
-  const body = (await res.json()) as { id?: string };
-  return body.id ?? "(no id)";
 }
 
 /* -------------------------------------------------------------------------- */
@@ -589,8 +802,8 @@ Deno.serve(async (req: Request) => {
   // each error stage separately.
   const requiredEnvs = [
     "FIRMS_API_KEY",
-    "RESEND_API_KEY",
-    "RESEND_FROM",
+    "GMAIL_FROM",
+    "GMAIL_APP_PASSWORD",
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
   ] as const;

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { SubscriptionForm } from "./SubscriptionForm";
 import { SubscriptionList } from "./SubscriptionList";
+import { ManualRunButton } from "./ManualRunButton";
 import type { Province } from "@/lib/provinces";
 
 interface DashboardSubscription {
@@ -64,13 +65,7 @@ export function DashboardClient({
         />
       </Card>
 
-      <div className="rounded-xl border border-amber/30 bg-amber/5 px-4 py-3 text-sm text-amber">
-        <strong className="font-semibold">Próximamente</strong>
-        <p className="mt-1 text-xs">
-          Cuando el detector (cron + Edge Function) entre en producción,
-          aparecerán aquí las alertas enviadas a tu correo.
-        </p>
-      </div>
+      <ManualRunButton />
     </>
   );
 }

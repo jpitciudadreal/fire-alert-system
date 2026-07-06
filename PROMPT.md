@@ -33,7 +33,7 @@ Aplicación web para visualizar en tiempo real los focos de incendios activos ut
 ### Servicios Externos
 
 - **API de Datos:** NASA FIRMS API (MODIS y VIIRS)
-- **Email:** Resend o SendGrid para envío de alertas
+- **Email:** Gmail SMTP con App Password (2-Step Verification + 16-char app password) para envío de alertas desde una cuenta propia
 - **Cron Jobs:** pg_cron en Supabase para programar verificaciones
 
 ## 📊 Estructura de Base de Datos (Supabase)

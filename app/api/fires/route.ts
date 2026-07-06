@@ -10,7 +10,12 @@ import type { FireResponse, FirePoint } from "@/types";
  * Soporta los siguientes query params (alineados con la UI de pestañas
  * `TabHistory` / `TabMap` estilo fire-alert-web):
  *
- *   - `limit`         → máximo de focos a devolver (1..500)
+ *   - `limit`         → máximo de focos a devolver (1..1000).
+ *                       Por defecto 200 si se omite o es inválido.
+ *                       1000 es un techo blando: cubre los picos
+ *                       absolutos de julio-octubre en España sin
+ *                       permitir que un cliente abuse de la memoria
+ *                       del fetch de Next o del propio cliente JS.
  *   - `province_id`   → filtra a una sola provincia por slug/bbox
  *   - `status`        → `active` (default) | `extinct`. En esta
  *                       versión `extinct` cae sobre el mismo dataset
@@ -18,9 +23,16 @@ import type { FireResponse, FirePoint } from "@/types";
  *                       se mantiene el parámetro para paridad visual
  *                       con el subproyecto.
  *
- * Cuando `NASA_FIRMS_API_KEY` está configurado, la respuesta se
- * cachea una hora (Next.js fetch revalidate); en demo mode (mock)
- * no se cachea para que los cambios manuales se vean al instante.
+ * Errores de FIRMS nunca se silencian con datos sintéticos: la
+ * respuesta incluye `reason` ("no-key" | "invalid-key" | "network" |
+ * "empty") para que la UI muestre un mensaje accionable.
+ *
+ * Cuando `NASA_FIRMS_API_KEY` está configurado **y la respuesta es
+ * real** (FIRMS devolvió datos), el handler cachea una hora. Cualquier
+ * respuesta que NO venga de FIRMS (no-key / invalid-key / network) o
+ * que lleve filtros por provincia/status usa `no-store` — devolver un
+ * 1h stale de `{reason:"no-key", fires:[]}` a otro servidor con la
+ * key recién configurada sería peor que un cache miss.
  */
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -56,14 +68,17 @@ export async function GET(request: Request): Promise<Response> {
     status,
   };
 
-  // El cache agresivo (1h) sólo aplica a la respuesta sin filtros:
-  // cuando hay `province_id` o `status != active` cada combinación
-  // generaría un bucket propio y/o devolvería datos cacheados
-  // incorrectos. `no-store` evita servir respuestas viejas entre
-  // peticiones con filtros distintos en Vercel/CDN.
+  // El cache agresivo (1h) sólo aplica a respuestas REALES de FIRMS sin
+  // filtros. Cuando hay `province_id` o `status != active` cada
+  // combinación generaría un bucket propio y/o devolvería datos
+  // cacheados incorrectos. Cuando `reason` indica que NO consultamos
+  // FIRMS con éxito (`no-key` / `invalid-key` / `network`), tampoco
+  // queremos cachear el "estado vacío" durante una hora —回転 al
+  // servidor con una key recién configurada se merece un MISS.
   const hasFilters = provinceSlug !== null || status !== "active";
+  const failed = payload.reason && payload.reason !== "empty";
   const cacheControl =
-    payload.isMock || hasFilters
+    hasFilters || failed
       ? "no-store"
       : "public, s-maxage=3600, stale-while-revalidate=86400";
 
@@ -78,7 +93,12 @@ export async function GET(request: Request): Promise<Response> {
 function clampLimit(raw: string | null): number {
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return 200;
-  return Math.min(500, Math.max(1, Math.floor(n)));
+  // Techo 1000: suficiente para absorber el peor escenario de
+  // detección NRT de España en 24h (~500-800 filas en agosto) sin
+  // permitir abusar del revalidate cache de Next ni del runtime del
+  // cliente (Leaflet empieza a resentirse a partir de 5k CircleMarkers
+  // pero mantenemos mucho margen para futuros exportadores).
+  return Math.min(1000, Math.max(1, Math.floor(n)));
 }
 
 function applyFilters(

@@ -45,6 +45,30 @@ function sortKey(f: FirePoint): string {
   return `${f.acq_date} ${paddedTime}`;
 }
 
+/* -------------------------------------------------------------------------- */
+/*                       Límite por temporada de incendios                     */
+/* -------------------------------------------------------------------------- */
+/**
+ * En España los picos de detección NRT caen en julio-octubre (olas de
+ * calor con frentes secos). Fuera de esa ventana es raro pasar de 200
+ * focos/24h, dentro de ella se ha llegado a ~500 en picos históricos.
+ *
+ * Subir el `?limit` en temporada alta nos asegura que el mapa no se
+ * quede corto el día que importa; Leaflet con `CircleMarker` aguanta
+ * holgadamente 500 markers (la ralentización perceptible aparece a
+ * partir de ~5k). Mantener el `useCallback` keyed por el valor del
+ * límite garantiza que un transition seasonal sea una sola petición más,
+ * no un bucle de fetches.
+ */
+const OFF_SEASON_LIMIT = 200;
+const HIGH_SEASON_LIMIT = 500;
+// 0-indexed: jul=6, ago=7, sep=8, oct=9.
+const HIGH_SEASON_MONTHS = new Set([6, 7, 8, 9]);
+
+function isHighSeason(now: Date = new Date()): boolean {
+  return HIGH_SEASON_MONTHS.has(now.getMonth());
+}
+
 export default function TabMap({ onShowHistory }: TabMapProps = {}) {
   const [fires, setFires] = useState<FirePoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,7 +82,13 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/fires?limit=200", { cache: "no-store" });
+      // Subimos a 500 en temporada alta (jul-oct) para absorber picos
+      // de detección NRT. Fuera de temporada, 200 cubre de sobra el
+      // escenario típico y mantiene el render ligero.
+      const limit = isHighSeason() ? HIGH_SEASON_LIMIT : OFF_SEASON_LIMIT;
+      const res = await fetch(`/api/fires?limit=${limit}`, {
+        cache: "no-store",
+      });
       const data = (await res.json()) as FireResponse;
       setFires(data.fires ?? []);
       setLastUpdate(new Date());
@@ -73,9 +103,9 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
     load();
   }, [load]);
 
-  // Mantén la lista completa para el mapa (los markers siempre pintan
-  // los 200 focos, da igual cuántos se muestran en el aside). El aside
-  // toma sólo los `RECENT_COUNT` más recientes.
+  // Mantén la lista completa para el mapa (los markers pintan tanto
+  // los 200 de fuera de temporada como los 500 de temporada alta — el
+  // aside sólo necesita los RECENT_COUNT más recientes).
   const recentFires = useMemo(
     () =>
       [...fires]

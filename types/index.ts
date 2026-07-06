@@ -36,13 +36,29 @@ export interface FirePoint {
 }
 
 export interface FireResponse {
-  source: "nasa-firms" | "mock";
-  /** True when data was generated locally because no API key was configured */
-  isMock: boolean;
+  /**
+   * Data source. The legacy `"mock"` value was removed when the curated
+   * demo dataset was deleted; the field is kept as a single literal so
+   * code that branches on it can grow to e.g. `"nasa-firms" | "cache"`
+   * without breaking consumers.
+   */
+  source: "nasa-firms";
   count: number;
   fetchedAt: string;
   fires: FirePoint[];
-  /** Why the response is mock data (only present when `isMock` is true) */
+  /**
+   * Why the response contains no fires, when applicable:
+   *
+   *   - `empty`        → we reached FIRMS and it returned zero rows
+   *                       for Spain in the requested window (real data).
+   *   - `no-key`       → the NASA API key is not configured; the
+   *                       response is intentionally empty.
+   *   - `invalid-key`  → FIRMS rejected the key (401/403).
+   *   - `network`      → the upstream call failed for any other reason
+   *                       (DNS, TLS, timeout, non-2xx that isn't 401/403).
+   *
+   * Absent means we have a non-empty, real FIRMS response.
+   */
   reason?: "no-key" | "invalid-key" | "network" | "empty";
 }
 

@@ -103,15 +103,38 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
     load();
   }, [load]);
 
+  // Filtrar para mostrar estrictamente los fuegos de las últimas 24 horas en el mapa
+  const firesToday = useMemo(() => {
+    const oneDayAgo = new Date();
+    oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+    
+    return fires.filter((f) => {
+      if (!f.acq_date) return false;
+      const dateParts = f.acq_date.split("-"); // YYYY-MM-DD
+      if (dateParts.length !== 3) return false;
+      const fireDate = new Date(
+        Number(dateParts[0]),
+        Number(dateParts[1]) - 1,
+        Number(dateParts[2])
+      );
+      // Opcional: si existe acq_time, ajustar la hora
+      if (f.acq_time && f.acq_time.length === 4) {
+        fireDate.setHours(Number(f.acq_time.slice(0, 2)));
+        fireDate.setMinutes(Number(f.acq_time.slice(2, 4)));
+      }
+      return fireDate >= oneDayAgo;
+    });
+  }, [fires]);
+
   // Mantén la lista completa para el mapa (los markers pintan tanto
   // los 200 de fuera de temporada como los 500 de temporada alta — el
   // aside sólo necesita los RECENT_COUNT más recientes).
   const recentFires = useMemo(
     () =>
-      [...fires]
+      [...firesToday]
         .sort((a, b) => sortKey(b).localeCompare(sortKey(a)))
         .slice(0, RECENT_COUNT),
-    [fires],
+    [firesToday],
   );
 
   return (
@@ -147,7 +170,7 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
                 className={`h-2 w-2 rounded-full ${loading ? "bg-fire animate-pulse" : "bg-fire"}`}
               />
               <span className="font-mono text-xs text-textSecondary">
-                {loading ? "Cargando..." : `${fires.length} focos activos`}
+                {loading ? "Cargando..." : `${firesToday.length} focos activos`}
               </span>
             </div>
 
@@ -186,7 +209,7 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
           </div>
         </div>
 
-        <MapShell fires={fires} height="fill" view={view} />
+        <MapShell fires={firesToday} height="fill" view={view} />
 
         {/* Última actualización */}
         {lastUpdate ? (
@@ -283,7 +306,7 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
                 <div className="py-12 text-center font-mono text-sm text-textSecondary">
                   Cargando...
                 </div>
-              ) : fires.length === 0 ? (
+              ) : firesToday.length === 0 ? (
                 <div className="py-12 text-center">
                   <div className="mb-2 text-3xl">✅</div>
                   <div className="text-sm text-textSecondary">
@@ -333,7 +356,7 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
               Pie fijo del aside con el salto a Historial. Sólo se renderiza
               si el padre nos pasó callback — si no, mejor ocultar que
               mostrar un botón inerte. NO lo deshabilitamos cuando
-              fires.length===0: un usuario sin focos activos sigue queriendo
+              firesToday.length===0: un usuario sin focos activos sigue queriendo
               revisar el historial reciente para confirmar la tendencia.
             */}
             {onShowHistory ? (
@@ -343,9 +366,9 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
                   onClick={onShowHistory}
                   className="block w-full rounded-lg border border-border bg-base py-2.5 text-center text-sm text-textPrimary transition-colors hover:border-fire hover:bg-fire/10 hover:text-fire"
                 >
-                  {fires.length > RECENT_COUNT ? (
-                    <>Ver más → ({fires.length - RECENT_COUNT}+ en historial)</>
-                  ) : fires.length === 0 ? (
+                  {firesToday.length > RECENT_COUNT ? (
+                    <>Ver más → ({firesToday.length - RECENT_COUNT}+ en historial)</>
+                  ) : firesToday.length === 0 ? (
                     <>Ver historial → (sin detecciones hoy)</>
                   ) : (
                     <>Ver más → (Historial completo)</>

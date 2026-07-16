@@ -105,7 +105,7 @@ export default function TabMyAlerts() {
     fires.filter((f) => f.province === slug).slice(0, 5);
 
   return (
-    <div className="mx-auto max-w-3xl animate-fade-in p-6 sm:p-8">
+    <div className="mx-auto max-w-3xl animate-fade-in p-6 sm:p-8 h-full overflow-y-auto">
       <h1 className="mb-2 text-2xl font-bold text-textPrimary">Mis alertas</h1>
       <p className="mb-8 text-sm text-textSecondary sm:text-base">
         Introduce tu email para ver y gestionar tus suscripciones activas.

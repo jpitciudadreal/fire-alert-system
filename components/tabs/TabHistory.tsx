@@ -70,7 +70,7 @@ export default function TabHistory() {
       : 0;
 
   return (
-    <div className="mx-auto max-w-5xl animate-fade-in p-6 sm:p-8">
+    <div className="mx-auto max-w-5xl animate-fade-in p-6 sm:p-8 h-full overflow-y-auto">
       <div className="mb-2 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-textPrimary">
           Historial de detecciones

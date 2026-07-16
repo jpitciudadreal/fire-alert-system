@@ -98,7 +98,7 @@ export default function TabSubscribe() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl animate-fade-in p-6">
+    <div className="mx-auto max-w-2xl animate-fade-in p-6 h-full overflow-y-auto">
       {/* Hero */}
       <div className="mb-6 rounded-2xl border border-border bg-surface p-6">
         <div className="flex items-start gap-4">

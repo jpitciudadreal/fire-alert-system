@@ -40,7 +40,15 @@ function isInSpain(lat: number, lng: number): boolean {
 }
 
 /** How many days back to look for active fires (max 10 for NRT) */
-const FIRMS_DAYS = 1;
+const FIRMS_DAYS = 3;
+
+/** Fuentes de satélites que se consultarán en paralelo */
+const FIRMS_SOURCES = [
+  "VIIRS_SNPP_NRT",
+  "VIIRS_NOAA20_NRT",
+  "VIIRS_NOAA21_NRT",
+  "MODIS_NRT"
+];
 
 /**
  * Fetch active wildfires for Spain from NASA FIRMS.
@@ -117,31 +125,54 @@ export async function getFires(): Promise<FireResponse> {
   }
 }
 
-/** Performs the actual HTTP request to NASA FIRMS and parses the CSV. */
+/** Performs the actual HTTP requests to NASA FIRMS for all sources and combines them. */
 async function fetchFiresFromFirms(): Promise<FirePoint[]> {
   const key = process.env.NASA_FIRMS_API_KEY;
   if (!key) return [];
 
-  const url =
-    `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${key}` +
-    `/${FIRMS_SOURCE}/${FIRMS_REGION}/${FIRMS_DAYS}`;
+  // Hacemos fetch a todas las fuentes de satélites en paralelo
+  const promises = FIRMS_SOURCES.map(async (source) => {
+    const url =
+      `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${key}` +
+      `/${source}/${FIRMS_REGION}/${FIRMS_DAYS}`;
 
-  const res = await fetch(url, {
-    // Re-fetch at most every hour when this route is called
-    next: { revalidate: 60 * 60 },
-    headers: { Accept: "text/csv" },
+    try {
+      const res = await fetch(url, {
+        // Re-fetch at most every hour
+        next: { revalidate: 60 * 60 },
+        headers: { Accept: "text/csv" },
+      });
+
+      if (!res.ok) {
+        console.error(`[firms] Source ${source} responded with ${res.status}`);
+        return [];
+      }
+
+      const csv = await res.text();
+      return parseCsv(csv).filter((f) => isInSpain(f.latitude, f.longitude));
+    } catch (e) {
+      console.error(`[firms] Failed to fetch source ${source}:`, e);
+      return [];
+    }
   });
 
-  if (!res.ok) {
-    throw new Error(`NASA FIRMS responded with ${res.status}`);
+  const results = await Promise.all(promises);
+  
+  // Unimos todos los focos y eliminamos duplicados si los hubiera por coordenadas exactas y tiempo
+  const combined = results.flat();
+  const seen = new Set<string>();
+  const uniqueFires: FirePoint[] = [];
+
+  for (const fire of combined) {
+    // Generar una clave de deduplicación basada en coordenadas, fecha y hora
+    const key = `${fire.latitude.toFixed(4)}_${fire.longitude.toFixed(4)}_${fire.acq_date}_${fire.acq_time}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueFires.push(fire);
+    }
   }
 
-  const csv = await res.text();
-  // Defensive in-depth filter: trim anything outside Spain even if the
-  // upstream FIRMS endpoint silently returned the world for the
-  // `area` segment. Same bbox as the URL so this can't accidentally
-  // hide a legitimate Spanish fire.
-  return parseCsv(csv).filter((f) => isInSpain(f.latitude, f.longitude));
+  return uniqueFires;
 }
 
 /** Minimal CSV parser tailored for FIRMS CSV output */

@@ -103,12 +103,27 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
     load();
   }, [load]);
 
+  // Filtros interactivos para la cabecera
+  const [filterConfidence, setFilterConfidence] = useState<"both" | "nominal" | "high">("both");
+  const [minBrightness, setMinBrightness] = useState<number>(0);
+
   // Filtrar para mostrar estrictamente los fuegos de las últimas 24 horas en el mapa
   const firesToday = useMemo(() => {
     const oneDayAgo = new Date();
     oneDayAgo.setDate(oneDayAgo.getDate() - 1);
     
     return fires.filter((f) => {
+      // 1. Eliminar focos de confianza baja ("low")
+      if (f.confidence === "low") return false;
+
+      // 2. Filtro de confianza interactivo (nominal, alta o ambas)
+      if (filterConfidence === "nominal" && f.confidence !== "nominal") return false;
+      if (filterConfidence === "high" && f.confidence !== "high") return false;
+
+      // 3. Filtro interactivo de temperatura de brillo mínima (Kelvin)
+      if (f.brightness < minBrightness) return false;
+
+      // 4. Límite estricto de últimas 24 horas
       if (!f.acq_date) return false;
       const dateParts = f.acq_date.split("-"); // YYYY-MM-DD
       if (dateParts.length !== 3) return false;
@@ -117,14 +132,13 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
         Number(dateParts[1]) - 1,
         Number(dateParts[2])
       );
-      // Opcional: si existe acq_time, ajustar la hora
       if (f.acq_time && f.acq_time.length === 4) {
         fireDate.setHours(Number(f.acq_time.slice(0, 2)));
         fireDate.setMinutes(Number(f.acq_time.slice(2, 4)));
       }
       return fireDate >= oneDayAgo;
     });
-  }, [fires]);
+  }, [fires, filterConfidence, minBrightness]);
 
   // Mantén la lista completa para el mapa (los markers pintan tanto
   // los 200 de fuera de temporada como los 500 de temporada alta — el
@@ -146,11 +160,40 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
       <div className="relative flex-1 min-h-0 min-w-0 overflow-hidden bg-base">
         <div className="scan-line" />
 
-        {/* Toolbar superior */}
+         {/* Toolbar superior */}
         <div className="pointer-events-auto absolute left-3 right-3 top-3 z-[1000] flex flex-wrap items-center justify-between gap-2">
-          {/* Estado de carga — pill izquierdo compacto. Se queda como
-              feedback inmediato del estado de red/fetch. */}
-          <div></div>
+          {/* Filtros izquierdos */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Filtro Confianza */}
+            <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface/90 px-3 py-1 text-xs text-textSecondary">
+              <span className="font-mono">Confianza:</span>
+              <select
+                value={filterConfidence}
+                onChange={(e) => setFilterConfidence(e.target.value as any)}
+                className="bg-transparent text-textPrimary outline-none cursor-pointer font-semibold"
+              >
+                <option value="both" className="bg-surface">Nominal + Alta</option>
+                <option value="nominal" className="bg-surface">Solo Nominal</option>
+                <option value="high" className="bg-surface">Solo Alta</option>
+              </select>
+            </div>
+
+            {/* Filtro Brillo mínimo */}
+            <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface/90 px-3 py-1 text-xs text-textSecondary">
+              <span className="font-mono">Brillo mín:</span>
+              <input
+                type="number"
+                min="0"
+                max="500"
+                step="10"
+                value={minBrightness || ""}
+                onChange={(e) => setMinBrightness(Number(e.target.value) || 0)}
+                placeholder="0 K"
+                className="w-16 bg-transparent text-textPrimary outline-none font-semibold font-mono"
+              />
+              <span className="text-[10px]">K</span>
+            </div>
+          </div>
 
           {/* Controles derechos (badge + toggle capa + actualizar).
               Agrupados para que `justify-between` los separe del pill

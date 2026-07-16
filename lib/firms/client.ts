@@ -31,12 +31,7 @@ const FIRMS_REGION = `${SPAIN_BBOX.west},${SPAIN_BBOX.south},${SPAIN_BBOX.east},
  * the global `world` area for an unrecognised `area` segment.
  */
 function isInSpain(lat: number, lng: number): boolean {
-  return (
-    lng >= SPAIN_BBOX.west &&
-    lng <= SPAIN_BBOX.east &&
-    lat >= SPAIN_BBOX.south &&
-    lat <= SPAIN_BBOX.north
-  );
+  return detectProvince(lat, lng) !== undefined;
 }
 
 /** How many days back to look for active fires (max 10 for NRT) */

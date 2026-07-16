@@ -34,10 +34,10 @@ const VARIANT_DIMS: Record<
   },
 };
 
-const ALT_TEXT = "Logotipo institucional del Gobierno de España";
+const ALT_TEXT = "Jefatura Provincial de Inspección de las Telecomunicaciones — Ministerio para la Transformación Digital y de la Función Pública";
 
 /**
- * Renders `public/LogotipoGob-MTDFP_JPIT.jpg` inside a white backdrop so it
+ * Renders `public/logo-jpit.jpg` inside a white backdrop so it
  * reads on the dark fire theme. Uses the `fill + object-contain` pattern so
  * the actual aspect ratio of the JPG is preserved regardless of whatever
  * dimensions the source file ships with.
@@ -55,7 +55,7 @@ export function PartnerLogo({ variant, className }: PartnerLogoProps) {
         .join(" ")}
     >
       <Image
-        src="/LogotipoGob-MTDFP_JPIT.jpg"
+        src="/logo-jpit.jpg"
         alt={ALT_TEXT}
         fill
         sizes={dims.sizes}

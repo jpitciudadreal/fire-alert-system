@@ -17,8 +17,8 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Fire Alert España — Alertas de incendios en tiempo real",
-    template: "%s · Fire Alert España",
+    default: "Alertas Incendios JPIT — Alertas de incendios en tiempo real",
+    template: "%s · Alertas Incendios JPIT",
   },
   description:
     "Suscríbete a alertas de incendios forestales por provincia. Datos satelitales NASA FIRMS actualizados cada 3 horas.",

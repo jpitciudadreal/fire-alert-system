@@ -54,7 +54,7 @@ export default function Home() {
               Sistema de monitorización
             </div>
             <div className="text-lg font-bold leading-tight text-textPrimary">
-              Fire Alert <span className="text-fire">España</span>
+              Alertas Incendios <span className="text-fire">JPIT</span>
             </div>
           </div>
         </div>
@@ -62,10 +62,10 @@ export default function Home() {
         {/* Logo institucional */}
         <div className="flex justify-center">
           <Image
-            src="/LogotipoGob-MTDFP_JPIT.jpg"
-            alt="Gobierno de España — Ministerio para la Transición Digital y de la Función Pública"
-            width={256}
-            height={64}
+            src="/logo-jpit.jpg"
+            alt="Jefatura Provincial de Inspección de las Telecomunicaciones — Ministerio para la Transición Digital y de la Función Pública"
+            width={320}
+            height={80}
             className="h-16 w-auto max-w-full select-none"
             draggable={false}
             priority

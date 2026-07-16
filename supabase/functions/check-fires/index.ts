@@ -458,8 +458,8 @@ function renderEmail(
   const hrefDashboard = safeHref(dashboardUrl);
   const subject =
     count === 1
-      ? `🔥 Nuevo foco activo en ${subjectProvinceName}`
-      : `🔥 ${count} nuevos focos activos en ${subjectProvinceName}`;
+      ? `🔥 Nuevo foco activo en ${subjectProvinceName} - Alertas Incendios JPIT`
+      : `🔥 ${count} nuevos focos activos en ${subjectProvinceName} - Alertas Incendios JPIT`;
 
   const rowsHtml = fires.map(renderFireRow).join("");
 
@@ -482,7 +482,7 @@ function renderEmail(
         ">
           <tr>
             <td>
-              <h1 style="margin:0 0 8px 0; color:#fb923c; font-size:20px;">🔥 Fire Alert</h1>
+              <h1 style="margin:0 0 8px 0; color:#fb923c; font-size:20px;">🔥 Alertas Incendios JPIT</h1>
               <p style="margin:0 0 24px 0; color:#d4d4d8; font-size:14px; line-height:1.5;">
                 Hemos detectado <strong style="color:#fafafa;">${count}</strong>
                 ${count === 1 ? "nuevo foco activo" : "nuevos focos activos"}

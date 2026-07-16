@@ -37,6 +37,10 @@ export default function TabHistory() {
   const [filterStatus, setStatus] = useState<"ACTIVE" | "EXTINCT">("ACTIVE");
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  // Nuevos filtros interactivos
+  const [filterConfidence, setFilterConfidence] = useState<"both" | "nominal" | "high">("both");
+  const [minBrightness, setMinBrightness] = useState<number>(0);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -57,6 +61,23 @@ export default function TabHistory() {
     load();
   }, [load]);
 
+  // Aplicar filtrado a los fuegos cargados
+  const filteredFires = useMemo(() => {
+    return fires.filter((f) => {
+      // 1. Eliminar focos de confianza baja ("low")
+      if (f.confidence === "low") return false;
+
+      // 2. Filtro de confianza interactivo (nominal, alta o ambas)
+      if (filterConfidence === "nominal" && f.confidence !== "nominal") return false;
+      if (filterConfidence === "high" && f.confidence !== "high") return false;
+
+      // 3. Filtro interactivo de temperatura de brillo mínima (Kelvin)
+      if (f.brightness < minBrightness) return false;
+
+      return true;
+    });
+  }, [fires, filterConfidence, minBrightness]);
+
   const getFrpBadge = (b: number) => {
     if (b > 380) return { label: "Muy alto", color: "bg-fire/20 text-fire" };
     if (b > 340) return { label: "Alto",     color: "bg-amber/20 text-amber" };
@@ -65,8 +86,8 @@ export default function TabHistory() {
   };
 
   const totalBrightness =
-    fires.length > 0
-      ? fires.reduce((s, f) => s + (f.brightness || 0), 0) / fires.length
+    filteredFires.length > 0
+      ? filteredFires.reduce((s, f) => s + (f.brightness || 0), 0) / filteredFires.length
       : 0;
 
   return (
@@ -119,12 +140,53 @@ export default function TabHistory() {
             <option value="EXTINCT">Extinguidos</option>
           </select>
         </div>
-        {(filterProvince || filterStatus !== "ACTIVE") ? (
+
+        {/* Filtro Confianza */}
+        <div className="min-w-40">
+          <label className="mb-1 block font-mono text-xs uppercase tracking-wide text-textSecondary">
+            Confianza
+          </label>
+          <select
+            value={filterConfidence}
+            onChange={(e) => setFilterConfidence(e.target.value as any)}
+            className="w-full rounded-lg border border-border bg-base px-3 py-2 text-sm text-textPrimary outline-none transition-colors focus:border-fire"
+          >
+            <option value="both">Nominal + Alta</option>
+            <option value="nominal">Solo Nominal</option>
+            <option value="high">Solo Alta</option>
+          </select>
+        </div>
+
+        {/* Filtro Brillo mínimo */}
+        <div className="min-w-32">
+          <label className="mb-1 block font-mono text-xs uppercase tracking-wide text-textSecondary">
+            Brillo Mínimo
+          </label>
+          <div className="relative flex items-center">
+            <input
+              type="number"
+              min="0"
+              max="500"
+              step="10"
+              value={minBrightness || ""}
+              onChange={(e) => setMinBrightness(Number(e.target.value) || 0)}
+              placeholder="0"
+              className="w-full rounded-lg border border-border bg-base pl-3 pr-8 py-2 text-sm text-textPrimary outline-none transition-colors focus:border-fire font-mono"
+            />
+            <span className="absolute right-3 font-mono text-xs text-textSecondary pointer-events-none">
+              K
+            </span>
+          </div>
+        </div>
+
+        {(filterProvince || filterStatus !== "ACTIVE" || filterConfidence !== "both" || minBrightness > 0) ? (
           <div className="flex items-end">
             <button
               onClick={() => {
                 setFilterProvince("");
                 setStatus("ACTIVE");
+                setFilterConfidence("both");
+                setMinBrightness(0);
               }}
               className="rounded-lg border border-border px-3 py-2 text-xs text-textSecondary transition-colors hover:text-fire"
             >
@@ -135,11 +197,11 @@ export default function TabHistory() {
       </div>
 
       {/* Stats */}
-      {!loading && fires.length > 0 ? (
+      {!loading && filteredFires.length > 0 ? (
         <div className="mb-6 grid grid-cols-3 gap-4">
           {[
-            ["Total focos", fires.length],
-            ["Alta confianza", fires.filter((f) => f.confidence === "high").length],
+            ["Total focos", filteredFires.length],
+            ["Alta confianza", filteredFires.filter((f) => f.confidence === "high").length],
             [
               "Brillo medio",
               totalBrightness > 0 ? `${totalBrightness.toFixed(1)} K` : "—",
@@ -161,7 +223,7 @@ export default function TabHistory() {
         <div className="py-24 text-center font-mono text-sm text-textSecondary">
           Cargando datos...
         </div>
-      ) : fires.length === 0 ? (
+      ) : filteredFires.length === 0 ? (
         <div className="rounded-2xl border border-border bg-surface py-20 text-center">
           <div className="mb-2 text-3xl">🔍</div>
           <div className="text-sm text-textSecondary">
@@ -170,7 +232,7 @@ export default function TabHistory() {
         </div>
       ) : (
         <div className="space-y-3">
-          {fires.map((fire) => {
+          {filteredFires.map((fire) => {
             const frpBadge = getFrpBadge(fire.brightness);
             const isOpen = expanded === fire.fire_id;
             return (

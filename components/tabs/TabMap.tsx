@@ -30,7 +30,7 @@ interface TabMapProps {
   onShowHistory?: () => void;
 }
 
-const RECENT_COUNT = 5;
+const RECENT_COUNT = 10;
 
 // Sentinel que usamos como timestamp de ordenación para campos faltantes.
 // Lo dejamos muy en el pasado para que los fuegos sin `acq_date` caigan al
@@ -352,30 +352,6 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
               )}
             </div>
 
-            {/*
-              Pie fijo del aside con el salto a Historial. Sólo se renderiza
-              si el padre nos pasó callback — si no, mejor ocultar que
-              mostrar un botón inerte. NO lo deshabilitamos cuando
-              firesToday.length===0: un usuario sin focos activos sigue queriendo
-              revisar el historial reciente para confirmar la tendencia.
-            */}
-            {onShowHistory ? (
-              <div className="border-t border-border p-4">
-                <button
-                  type="button"
-                  onClick={onShowHistory}
-                  className="block w-full rounded-lg border border-border bg-base py-2.5 text-center text-sm text-textPrimary transition-colors hover:border-fire hover:bg-fire/10 hover:text-fire"
-                >
-                  {firesToday.length > RECENT_COUNT ? (
-                    <>Ver más → ({firesToday.length - RECENT_COUNT}+ en historial)</>
-                  ) : firesToday.length === 0 ? (
-                    <>Ver historial → (sin detecciones hoy)</>
-                  ) : (
-                    <>Ver más → (Historial completo)</>
-                  )}
-                </button>
-              </div>
-            ) : null}
           </>
         )}
       </aside>

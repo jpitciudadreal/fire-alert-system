@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { PROVINCES_SORTED } from "@/lib/provinces";
 import type { FirePoint } from "@/types";
 

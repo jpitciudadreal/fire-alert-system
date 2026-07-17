@@ -67,6 +67,7 @@ interface Fire {
   longitude: number;
   confidence: Confidence;
   brightness: number;
+  frp: number;
   acq_date: string;
   acq_time: string;
   satellite: string;
@@ -83,6 +84,8 @@ interface SubscriptionRow {
   filter_confidence: "nominal" | "high" | null;
   /** null → sin filtro; número → solo focos con brightness >= este valor (Kelvin) */
   min_brightness: number | null;
+  /** null → sin filtro; número → solo focos con frp >= este valor (MW) */
+  min_frp: number | null;
 }
 
 interface AlertRunSummary {
@@ -273,6 +276,7 @@ function parseFirmsCsv(csv: string): Fire[] {
   const acqTimeIdx = header.indexOf("acq_time");
   const satelliteIdx = header.indexOf("satellite");
   const confidenceIdx = header.indexOf("confidence");
+  const frpIdx = header.indexOf("frp");
 
   if (latIdx < 0 || lngIdx < 0) return [];
 
@@ -297,6 +301,7 @@ function parseFirmsCsv(csv: string): Fire[] {
       longitude: lng,
       confidence: normalizeConfidence(cols[confidenceIdx]),
       brightness,
+      frp: frpIdx >= 0 ? Number(cols[frpIdx]) || 0 : 0,
       acq_date,
       acq_time,
       satellite,
@@ -335,7 +340,7 @@ async function fetchSubscribersByProvince(
   // Solo suscripciones confirmadas (double opt-in completado)
   const u =
     `${url}/rest/v1/subscriptions` +
-    `?select=id,province_slug,province_name,email,filter_confidence,min_brightness` +
+    `?select=id,province_slug,province_name,email,filter_confidence,min_brightness,min_frp` +
     `&province_slug=in.(${inList})` +
     `&confirmed=eq.true`;
 
@@ -421,6 +426,9 @@ function renderFireRow(fire: Fire): string {
       <td style="padding: 14px 16px; border-top: 1px solid #27272a; font-size: 13px;">
         ${fire.brightness.toFixed(1)} K
       </td>
+      <td style="padding: 14px 16px; border-top: 1px solid #27272a; font-size: 13px; color: #fb923c; font-weight: 600;">
+        ${fire.frp > 0 ? fire.frp.toFixed(1) + " MW" : "—"}
+      </td>
       <td style="padding: 14px 16px; border-top: 1px solid #27272a; font-size: 13px; color: #a1a1aa;">
         ${fire.acq_date} · ${hh}:${mm} UTC
       </td>
@@ -500,7 +508,8 @@ function renderEmail(
                   <tr style="text-align:left;">
                     <th style="padding:0 16px 8px 16px; font-size:11px; font-weight:600; color:#71717a; letter-spacing:0.05em; text-transform:uppercase;">Confianza</th>
                     <th style="padding:0 16px 8px 16px; font-size:11px; font-weight:600; color:#71717a; letter-spacing:0.05em; text-transform:uppercase;">Coordenadas</th>
-                    <th style="padding:0 16px 8px 16px; font-size:11px; font-weight:600; color:#71717a; letter-spacing:0.05em; text-transform:uppercase;">Brillo</th>
+                    <th style="padding:0 16px 8px 16px; font-size:11px; font-weight:600; color:#71717a; letter-spacing:0.05em; text-transform:uppercase;">Brillo (K)</th>
+                    <th style="padding:0 16px 8px 16px; font-size:11px; font-weight:600; color:#71717a; letter-spacing:0.05em; text-transform:uppercase;">FRP (MW)</th>
                     <th style="padding:0 16px 8px 16px; font-size:11px; font-weight:600; color:#71717a; letter-spacing:0.05em; text-transform:uppercase;">Adquisición</th>
                   </tr>
                 </thead>
@@ -877,6 +886,8 @@ Deno.serve(async (req: Request) => {
         if (CONFIDENCE_ORDER[f.confidence] < minConfidenceLevel) return false;
         // Filtro de temperatura de brillo mínima
         if (sub.min_brightness !== null && f.brightness < sub.min_brightness) return false;
+        // Filtro de FRP mínimo
+        if (sub.min_frp !== null && f.frp < sub.min_frp) return false;
         return true;
       });
       if (candidateFires.length === 0) continue;

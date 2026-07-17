@@ -57,6 +57,7 @@ export async function POST(request: Request): Promise<Response> {
     province_id?: string;
     filter_confidence?: "nominal" | "high" | null;
     min_brightness?: number | null;
+    min_frp?: number | null;
   };
   try {
     body = await request.json();
@@ -90,6 +91,10 @@ export async function POST(request: Request): Promise<Response> {
     typeof body.min_brightness === "number" && body.min_brightness > 0
       ? body.min_brightness
       : null;
+  const minFrp =
+    typeof body.min_frp === "number" && body.min_frp > 0
+      ? body.min_frp
+      : null;
 
   const supabase = await createSupabaseServerClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -108,16 +113,17 @@ export async function POST(request: Request): Promise<Response> {
     // Si cambian los filtros, los actualizamos
     const needsUpdate =
       existing.filter_confidence !== filterConfidence ||
-      existing.min_brightness !== minBrightness;
+      existing.min_brightness !== minBrightness ||
+      existing.min_frp !== minFrp;
     if (needsUpdate) {
       await sb
         .from("subscriptions")
-        .update({ filter_confidence: filterConfidence, min_brightness: minBrightness })
+        .update({ filter_confidence: filterConfidence, min_brightness: minBrightness, min_frp: minFrp })
         .eq("id", existing.id);
     }
     return Response.json({
       ok: true,
-      subscription: { ...existing, filter_confidence: filterConfidence, min_brightness: minBrightness },
+      subscription: { ...existing, filter_confidence: filterConfidence, min_brightness: minBrightness, min_frp: minFrp },
       already_active: true,
     });
   }
@@ -149,6 +155,7 @@ export async function POST(request: Request): Promise<Response> {
     confirmed,
     filter_confidence: filterConfidence,
     min_brightness: minBrightness,
+    min_frp: minFrp,
     unsubscribe_token: unsubscribeToken,
   };
   const { data, error } = await sb
@@ -173,6 +180,7 @@ export async function POST(request: Request): Promise<Response> {
           confirmed,
           filter_confidence: filterConfidence,
           min_brightness: minBrightness,
+          min_frp: minFrp,
           created_at: new Date().toISOString(),
           unsubscribe_token: unsubscribeToken,
         } as Subscription & { unsubscribe_token: string },

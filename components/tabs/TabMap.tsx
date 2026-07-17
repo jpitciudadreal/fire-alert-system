@@ -106,6 +106,7 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
   // Filtros interactivos para la cabecera
   const [filterConfidence, setFilterConfidence] = useState<"both" | "nominal" | "high">("both");
   const [minBrightness, setMinBrightness] = useState<number>(0);
+  const [minFrp, setMinFrp] = useState<number>(0);
 
   // Filtrar para mostrar estrictamente los fuegos de las últimas 24 horas en el mapa
   const firesToday = useMemo(() => {
@@ -123,7 +124,10 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
       // 3. Filtro interactivo de temperatura de brillo mínima (Kelvin)
       if (f.brightness < minBrightness) return false;
 
-      // 4. Límite estricto de últimas 24 horas
+      // 4. Filtro interactivo de FRP mínimo (MW)
+      if (minFrp > 0 && f.frp < minFrp) return false;
+
+      // 5. Límite estricto de últimas 24 horas
       if (!f.acq_date) return false;
       const dateParts = f.acq_date.split("-"); // YYYY-MM-DD
       if (dateParts.length !== 3) return false;
@@ -138,7 +142,7 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
       }
       return fireDate >= oneDayAgo;
     });
-  }, [fires, filterConfidence, minBrightness]);
+  }, [fires, filterConfidence, minBrightness, minFrp]);
 
   // Mantén la lista completa para el mapa (los markers pintan tanto
   // los 200 de fuera de temporada como los 500 de temporada alta — el
@@ -192,6 +196,22 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
                 className="w-16 bg-transparent text-textPrimary outline-none font-semibold font-mono"
               />
               <span className="text-[10px]">K</span>
+            </div>
+
+            {/* Filtro FRP mínimo */}
+            <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface/90 px-3 py-1 text-xs text-textSecondary">
+              <span className="font-mono">FRP mín:</span>
+              <input
+                type="number"
+                min="0"
+                max="2000"
+                step="10"
+                value={minFrp || ""}
+                onChange={(e) => setMinFrp(Number(e.target.value) || 0)}
+                placeholder="0 MW"
+                className="w-16 bg-transparent text-textPrimary outline-none font-semibold font-mono"
+              />
+              <span className="text-[10px]">MW</span>
             </div>
           </div>
 
@@ -299,7 +319,8 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
                   ["Latitud", selected.latitude.toFixed(4)],
                   ["Longitud", selected.longitude.toFixed(4)],
                   ["Confianza", selected.confidence],
-                  ["Brillo", `${selected.brightness.toFixed(1)} K`],
+                  ["Brillo (Ti4)", `${selected.brightness.toFixed(1)} K`],
+                  ["FRP", `${selected.frp.toFixed(1)} MW`],
                   ["Fecha", selected.acq_date],
                   ["Hora (UTC)", selected.acq_time],
                   ["Provincia", selected.province ?? "—"],
@@ -383,8 +404,15 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
                           {fire.brightness.toFixed(0)} K
                         </span>
                       </div>
-                      <div className="font-mono text-xs text-textSecondary">
-                        {fire.latitude.toFixed(3)}, {fire.longitude.toFixed(3)}
+                      <div className="flex items-center justify-between">
+                        <div className="font-mono text-xs text-textSecondary">
+                          {fire.latitude.toFixed(3)}, {fire.longitude.toFixed(3)}
+                        </div>
+                        {fire.frp > 0 && (
+                          <span className="font-mono text-xs text-orange-400">
+                            {fire.frp.toFixed(0)} MW
+                          </span>
+                        )}
                       </div>
                       <div className="mt-0.5 font-mono text-xs text-textSecondary">
                         {fire.acq_date} {fire.acq_time}

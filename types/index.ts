@@ -22,8 +22,10 @@ export interface FirePoint {
   satellite: string;
   /** Confidence level reported by FIRMS (low | nominal | high) */
   confidence: ConfidenceLevel;
-  /** Radiative power in MW (proxy for fire intensity) */
+  /** Brightness temperature (bright_ti4) in Kelvin — thermal intensity of the pixel */
   brightness: number;
+  /** Fire Radiative Power in Megawatts (MW) — direct measure of fire energy output */
+  frp: number;
   /** Satellite scan pixel (km) */
   scan_km: number;
   /** Satellite track pixel (km) */
@@ -89,6 +91,10 @@ export interface Subscription {
   province_slug: string;
   province_name: string;
   email: string;
+  confirmed?: boolean;
+  filter_confidence?: "nominal" | "high" | null;
+  min_brightness?: number | null;
+  min_frp?: number | null;
   created_at: string;
 }
 
@@ -110,7 +116,7 @@ export interface AlertRecord {
   sent_at: string;
   fire?: Pick<
     FirePoint,
-    "latitude" | "longitude" | "confidence" | "brightness" | "acq_date"
+    "latitude" | "longitude" | "confidence" | "brightness" | "frp" | "acq_date"
   >;
 }
 

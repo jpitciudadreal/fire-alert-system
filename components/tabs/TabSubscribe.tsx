@@ -3,20 +3,6 @@
 import { useMemo, useState } from "react";
 import { groupByComunidad, type Province } from "@/lib/provinces";
 
-/**
- * Tab "Suscribirse" — réplica de `fire-alert-web/components/TabSubscribe.tsx`
- * adaptada a Supabase.
- *
- * Diferencias:
- *   - Usa `<select>` con `<optgroup>` por comunidad (en el subproyecto
- *     ya lo hacía así; se mantiene para paridad visual).
- *   - El POST va contra `/api/subscribe` (definido en `app/api/subscribe`).
- *   - Si la API devuelve `unsubscribe_token` y `NEXT_PUBLIC_APP_URL`,
- *     la UI ofrece al usuario el "magic link" de baja (en producción
- *     esto llegaría por email; aquí lo enseñamos en pantalla para
- *     entornos de demo).
- */
-
 interface SuccessResponse {
   ok: true;
   subscription: {
@@ -40,6 +26,9 @@ export default function TabSubscribe() {
   const GROUPS = useMemo(() => groupByComunidad(), []);
   const [email, setEmail] = useState("");
   const [provinceId, setProvinceId] = useState("");
+  const [filterConfidence, setFilterConfidence] = useState<"nominal" | "high" | "">("");
+  const [minBrightness, setMinBrightness] = useState<string>("");
+  const [minFrp, setMinFrp] = useState<string>("");
   const [state, setState] = useState<State>("idle");
   const [message, setMessage] = useState("");
   const [unsubUrl, setUnsubUrl] = useState<string | null>(null);
@@ -57,6 +46,9 @@ export default function TabSubscribe() {
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           province_id: provinceId,
+          filter_confidence: filterConfidence || null,
+          min_brightness: minBrightness ? Number(minBrightness) : null,
+          min_frp: minFrp ? Number(minFrp) : null,
         }),
       });
       const data = (await res.json()) as SuccessResponse | ErrorResponse;
@@ -67,13 +59,12 @@ export default function TabSubscribe() {
         setMessage(
           data.already_active
             ? `Ya estabas suscrito a ${provinceName}.`
-            : `Suscripción activada para ${provinceName}. ${
+            : `Suscripción registrada para ${provinceName}. ${
                 data.mock
                   ? "(modo demo — el email no se envía)"
-                  : "Recibirás un email de confirmación."
+                  : "Recibirás un email de confirmación (double opt-in) para activar las alertas."
               }`
         );
-        // Generamos el unsubscribe_url pseudo-oficial (token → /unsubscribe)
         if (data.subscription.unsubscribe_token) {
           const base =
             (typeof window !== "undefined" ? window.location.origin : "") || "";
@@ -156,6 +147,9 @@ export default function TabSubscribe() {
               setState("idle");
               setEmail("");
               setProvinceId("");
+              setFilterConfidence("");
+              setMinBrightness("");
+              setMinFrp("");
               setUnsubUrl(null);
             }}
             className="mt-6 text-sm text-fire hover:underline"
@@ -207,6 +201,58 @@ export default function TabSubscribe() {
                     </optgroup>
                   ))}
               </select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-border/50 pt-4">
+              <div>
+                <label className="mb-1.5 block font-mono text-xs uppercase tracking-wide text-textSecondary">
+                  Confianza Mínima
+                </label>
+                <select
+                  value={filterConfidence}
+                  onChange={(e) => setFilterConfidence(e.target.value as any)}
+                  disabled={state === "loading"}
+                  className="w-full cursor-pointer appearance-none rounded-lg border border-border bg-base px-3 py-2 text-xs text-textPrimary outline-none transition-colors focus:border-fire"
+                >
+                  <option value="">Cualquiera</option>
+                  <option value="nominal">Nominal / Alta</option>
+                  <option value="high">Solo Alta</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block font-mono text-xs uppercase tracking-wide text-textSecondary">
+                  Brillo Mín (K)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="500"
+                  step="10"
+                  value={minBrightness}
+                  onChange={(e) => setMinBrightness(e.target.value)}
+                  placeholder="Ej: 340"
+                  disabled={state === "loading"}
+                  className="w-full rounded-lg border border-border bg-base px-3 py-2 font-mono text-xs text-textPrimary placeholder:text-textSecondary/50 outline-none transition-colors focus:border-fire"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block font-mono text-xs uppercase tracking-wide text-textSecondary">
+                  FRP Mín (MW)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="2000"
+                  step="10"
+                  value={minFrp}
+                  onChange={(e) => setMinFrp(e.target.value)}
+                  placeholder="Ej: 50"
+                  disabled={state === "loading"}
+                  className="w-full rounded-lg border border-border bg-base px-3 py-2 font-mono text-xs text-textPrimary placeholder:text-textSecondary/50 outline-none transition-colors focus:border-fire"
+                />
+              </div>
             </div>
 
             {state === "error" ? (

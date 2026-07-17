@@ -194,6 +194,7 @@ function parseCsv(csv: string): FirePoint[] {
   const acqTimeIdx = header.indexOf("acq_time");
   const satelliteIdx = header.indexOf("satellite");
   const confidenceIdx = header.indexOf("confidence");
+  const frpIdx = header.indexOf("frp");
 
   if (latIdx < 0 || lngIdx < 0) return [];
 
@@ -212,6 +213,7 @@ function parseCsv(csv: string): FirePoint[] {
       satellite: cols[satelliteIdx] ?? FIRMS_SOURCE,
       confidence: normalizeConfidence(cols[confidenceIdx]),
       brightness: brightnessIdx >= 0 ? Number(cols[brightnessIdx]) || 0 : 0,
+      frp: frpIdx >= 0 ? Number(cols[frpIdx]) || 0 : 0,
       scan_km: Number(cols[scanIdx]) || 0,
       track_km: Number(cols[trackIdx]) || 0,
       acq_date: cols[acqDateIdx] ?? "",

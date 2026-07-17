@@ -40,6 +40,7 @@ export default function TabHistory() {
   // Nuevos filtros interactivos
   const [filterConfidence, setFilterConfidence] = useState<"both" | "nominal" | "high">("both");
   const [minBrightness, setMinBrightness] = useState<number>(0);
+  const [minFrp, setMinFrp] = useState<number>(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,9 +75,12 @@ export default function TabHistory() {
       // 3. Filtro interactivo de temperatura de brillo mínima (Kelvin)
       if (f.brightness < minBrightness) return false;
 
+      // 4. Filtro interactivo de FRP mínimo (MW)
+      if (minFrp > 0 && f.frp < minFrp) return false;
+
       return true;
     });
-  }, [fires, filterConfidence, minBrightness]);
+  }, [fires, filterConfidence, minBrightness, minFrp]);
 
   const getFrpBadge = (b: number) => {
     if (b > 380) return { label: "Muy alto", color: "bg-fire/20 text-fire" };
@@ -88,6 +92,11 @@ export default function TabHistory() {
   const totalBrightness =
     filteredFires.length > 0
       ? filteredFires.reduce((s, f) => s + (f.brightness || 0), 0) / filteredFires.length
+      : 0;
+
+  const totalFrp =
+    filteredFires.length > 0
+      ? filteredFires.reduce((s, f) => s + (f.frp || 0), 0) / filteredFires.length
       : 0;
 
   return (
@@ -160,7 +169,7 @@ export default function TabHistory() {
         {/* Filtro Brillo mínimo */}
         <div className="min-w-32">
           <label className="mb-1 block font-mono text-xs uppercase tracking-wide text-textSecondary">
-            Brillo Mínimo
+            Brillo Mín
           </label>
           <div className="relative flex items-center">
             <input
@@ -179,7 +188,29 @@ export default function TabHistory() {
           </div>
         </div>
 
-        {(filterProvince || filterStatus !== "ACTIVE" || filterConfidence !== "both" || minBrightness > 0) ? (
+        {/* Filtro FRP mínimo */}
+        <div className="min-w-32">
+          <label className="mb-1 block font-mono text-xs uppercase tracking-wide text-textSecondary">
+            FRP Mín
+          </label>
+          <div className="relative flex items-center">
+            <input
+              type="number"
+              min="0"
+              max="2000"
+              step="10"
+              value={minFrp || ""}
+              onChange={(e) => setMinFrp(Number(e.target.value) || 0)}
+              placeholder="0"
+              className="w-full rounded-lg border border-border bg-base pl-3 pr-8 py-2 text-sm text-textPrimary outline-none transition-colors focus:border-fire font-mono"
+            />
+            <span className="absolute right-3 font-mono text-xs text-textSecondary pointer-events-none">
+              MW
+            </span>
+          </div>
+        </div>
+
+        {(filterProvince || filterStatus !== "ACTIVE" || filterConfidence !== "both" || minBrightness > 0 || minFrp > 0) ? (
           <div className="flex items-end">
             <button
               onClick={() => {
@@ -187,6 +218,7 @@ export default function TabHistory() {
                 setStatus("ACTIVE");
                 setFilterConfidence("both");
                 setMinBrightness(0);
+                setMinFrp(0);
               }}
               className="rounded-lg border border-border px-3 py-2 text-xs text-textSecondary transition-colors hover:text-fire"
             >
@@ -198,13 +230,17 @@ export default function TabHistory() {
 
       {/* Stats */}
       {!loading && filteredFires.length > 0 ? (
-        <div className="mb-6 grid grid-cols-3 gap-4">
+        <div className="mb-6 grid grid-cols-4 gap-4">
           {[
             ["Total focos", filteredFires.length],
             ["Alta confianza", filteredFires.filter((f) => f.confidence === "high").length],
             [
               "Brillo medio",
               totalBrightness > 0 ? `${totalBrightness.toFixed(1)} K` : "—",
+            ],
+            [
+              "FRP medio",
+              totalFrp > 0 ? `${totalFrp.toFixed(1)} MW` : "—",
             ],
           ].map(([label, value]) => (
             <div
@@ -255,15 +291,20 @@ export default function TabHistory() {
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-base font-semibold capitalize text-textPrimary">
-                        {(fire.province ?? "—").replace(/-/g, " ")}
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 font-mono text-xs ${frpBadge.color}`}
-                      >
-                        {fire.brightness.toFixed(0)} K
-                      </span>
-                    </div>
+                        <span className="text-base font-semibold capitalize text-textPrimary">
+                          {(fire.province ?? "—").replace(/-/g, " ")}
+                        </span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 font-mono text-xs ${frpBadge.color}`}
+                        >
+                          {fire.brightness.toFixed(0)} K
+                        </span>
+                        {fire.frp > 0 && (
+                          <span className="rounded-full bg-orange-400/10 px-2 py-0.5 font-mono text-xs text-orange-400">
+                            {fire.frp.toFixed(0)} MW
+                          </span>
+                        )}
+                      </div>
                     <div className="mt-1 font-mono text-xs text-textSecondary">
                       {fire.latitude.toFixed(3)}, {fire.longitude.toFixed(3)} ·{" "}
                       {fire.acq_date} {fire.acq_time} UTC
@@ -288,7 +329,8 @@ export default function TabHistory() {
                     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                       {[
                         ["ID", fire.fire_id],
-                        ["Brillo", `${fire.brightness.toFixed(1)} K`],
+                        ["Brillo (Ti4)", `${fire.brightness.toFixed(1)} K`],
+                        ["FRP", fire.frp > 0 ? `${fire.frp.toFixed(1)} MW` : "—"],
                         ["Satélite", fire.satellite],
                         ["Estado", filterStatus],
                         ["Fuente", "NASA FIRMS NRT"],

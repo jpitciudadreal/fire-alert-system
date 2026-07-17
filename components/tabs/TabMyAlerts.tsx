@@ -20,6 +20,9 @@ interface Subscription {
   province_name: string;
   unsubscribe_token?: string;
   confirmed?: boolean;
+  filter_confidence?: "nominal" | "high" | null;
+  min_brightness?: number | null;
+  min_frp?: number | null;
   created_at: string;
 }
 
@@ -193,6 +196,17 @@ export default function TabMyAlerts() {
                     <div className="space-y-4 px-6 py-5">
                       <div className="flex items-center justify-between text-sm">
                         <span className="font-mono text-textSecondary">
+                          Estado
+                        </span>
+                        <span className={`font-mono text-xs font-semibold px-2 py-0.5 rounded-full ${
+                          sub.confirmed ? "bg-green-400/10 text-green-400" : "bg-yellow-400/10 text-yellow-400"
+                        }`}>
+                          {sub.confirmed ? "Confirmada" : "Pendiente de Confirmar"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-mono text-textSecondary">
                           Suscrito desde
                         </span>
                         <span className="font-mono text-textPrimary">
@@ -205,6 +219,24 @@ export default function TabMyAlerts() {
                             },
                           )}
                         </span>
+                      </div>
+
+                      <div className="border-t border-border/40 my-2 pt-2">
+                        <div className="text-xs text-textSecondary uppercase font-mono tracking-wider mb-2">Filtros configurados</div>
+                        <div className="grid grid-cols-3 gap-2 text-xs font-mono">
+                          <div className="bg-base p-2 rounded-lg text-center">
+                            <div className="text-[10px] text-textSecondary mb-0.5">Confianza</div>
+                            <div className="text-textPrimary font-semibold capitalize">{sub.filter_confidence || "Cualquiera"}</div>
+                          </div>
+                          <div className="bg-base p-2 rounded-lg text-center">
+                            <div className="text-[10px] text-textSecondary mb-0.5">Brillo Mín</div>
+                            <div className="text-textPrimary font-semibold">{sub.min_brightness ? `${sub.min_brightness} K` : "—"}</div>
+                          </div>
+                          <div className="bg-base p-2 rounded-lg text-center">
+                            <div className="text-[10px] text-textSecondary mb-0.5">FRP Mín</div>
+                            <div className="text-textPrimary font-semibold">{sub.min_frp ? `${sub.min_frp} MW` : "—"}</div>
+                          </div>
+                        </div>
                       </div>
 
                       {hasActive ? (

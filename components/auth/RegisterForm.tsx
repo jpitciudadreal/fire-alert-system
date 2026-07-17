@@ -92,7 +92,7 @@ export function RegisterForm() {
         label="Contraseña"
         htmlFor="password"
         error={errors.password}
-        hint="Mínimo 6 caracteres."
+        hint="Mínimo 6 caracteres. Por motivos de seguridad, utiliza una contraseña diferente a la contraseña corporativa del MTDFP para el acceso a esta aplicación."
       >
         <Input
           id="password"

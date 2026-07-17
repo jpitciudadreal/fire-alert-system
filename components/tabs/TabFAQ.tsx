@@ -193,6 +193,42 @@ const FAQ_ITEMS: FaqItem[] = [
     ),
   },
   {
+    id: "frp",
+    question: "¿Qué es la Potencia Radiativa del Fuego (FRP)?",
+    answer: (
+      <div className="space-y-3">
+        <p>
+          El <strong className="text-textPrimary">FRP</strong> (Fire Radiative Power, por sus siglas en inglés) mide la cantidad de energía radiante emitida por unidad de tiempo a causa del fuego, expresada en <strong className="text-textPrimary">Megavatios (MW)</strong>.
+        </p>
+        <p>
+          A diferencia de la temperatura de brillo (que solo mide el "calor" detectado en el sensor), el FRP es un indicador cuantitativo directo de la **tasa de biomasa consumida** y la **intensidad física del incendio**. Un valor alto de FRP indica un fuego mucho más destructivo y activo.
+        </p>
+        <div className="rounded-lg border border-border bg-base px-4 py-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-textSecondary">
+            Escala de Intensidad FRP (Valores de referencia)
+          </p>
+          <ul className="space-y-1.5 text-xs text-textSecondary">
+            <li>
+              🔥 <span className="font-mono text-fire font-semibold">&lt; 10 MW</span>: Actividad baja (quemas agrícolas controladas, focos pequeños o fases iniciales/finales).
+            </li>
+            <li>
+              🔥 <span className="font-mono text-fire font-semibold">10 – 50 MW</span>: Incendio activo de intensidad media o moderada.
+            </li>
+            <li>
+              🔥 <span className="font-mono text-fire font-semibold">50 – 200 MW</span>: Incendio forestal de gran intensidad con rápida propagación.
+            </li>
+            <li>
+              🔥 <span className="font-mono text-fire font-semibold">&gt; 200 MW</span>: Incendio de extrema gravedad (comportamiento eruptivo o grandes incendios forestales concurrentes).
+            </li>
+          </ul>
+        </div>
+        <p className="text-xs text-textSecondary">
+          Al igual que con el brillo, puedes configurar un umbral de <strong>FRP mínimo</strong> al suscribirte (ej: 50 MW) para evitar alertas sobre quemas controladas o focos térmicos poco significativos.
+        </p>
+      </div>
+    ),
+  },
+  {
     id: "how-alerts-work",
     question: "¿Cómo funciona el flujo de alertas?",
     answer: (
@@ -217,7 +253,7 @@ const FAQ_ITEMS: FaqItem[] = [
             [
               "4",
               "Filtrado personalizado",
-              "Cada suscripción tiene su propia configuración de confianza mínima y temperatura de brillo mínima. Solo se genera alerta si el foco supera los umbrales del suscriptor.",
+              "Cada suscripción tiene su propia configuración de confianza mínima, temperatura de brillo y energía liberada (FRP) mínima. Solo se genera alerta si el foco supera los tres umbrales del suscriptor.",
             ],
             [
               "5",

@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import TabMap       from "@/components/tabs/TabMap";
 import TabSubscribe from "@/components/tabs/TabSubscribe";
 import TabMyAlerts  from "@/components/tabs/TabMyAlerts";
 import TabHistory   from "@/components/tabs/TabHistory";
+import TabFAQ       from "@/components/tabs/TabFAQ";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 /**
  * Landing tabbed — réplica de `fire-alert-web/app/page.tsx`.
@@ -14,8 +16,9 @@ import TabHistory   from "@/components/tabs/TabHistory";
  * Composición:
  *   - Header sticky con brand 🔥 + logo institucional del Gobierno
  *     + indicador live del estado de FIRMS.
- *   - Nav con 4 pestañas (Mapa en vivo · Suscribirse · Mis alertas ·
- *     Historial). El cambio de pestaña es client-side (useState).
+ *   - Nav con 5 pestañas (Mapa en vivo · Suscribirse* · Mis alertas* ·
+ *     Historial · ¿Cómo funciona?).
+ *     * Solo visibles / activas para usuarios autenticados.
  *   - Footer sobrio con aviso de emergencias 112 y atribución FIRMS.
  *
  * Detalle de altura:
@@ -25,17 +28,50 @@ import TabHistory   from "@/components/tabs/TabHistory";
  *     El scroll final queda en el `<aside>` ("Focos activos").
  */
 
-const TABS = [
-  { id: "map",       label: "🗺️  Mapa en vivo" },
-  { id: "subscribe", label: "🔔  Suscribirse" },
-  { id: "my-alerts", label: "📋  Mis alertas" },
-  { id: "history",   label: "📜  Historial" },
+const ALL_TABS = [
+  { id: "map",       label: "🗺️  Mapa en vivo",      protected: false },
+  { id: "subscribe", label: "🔔  Suscribirse",         protected: true  },
+  { id: "my-alerts", label: "📋  Mis alertas",         protected: true  },
+  { id: "history",   label: "📜  Historial",           protected: false },
+  { id: "faq",       label: "❓  ¿Cómo funciona?",    protected: false },
 ] as const;
 
-type Tab = (typeof TABS)[number]["id"];
+type Tab = (typeof ALL_TABS)[number]["id"];
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("map");
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+
+    // Comprobación inicial de sesión
+    supabase.auth.getSession().then(({ data }) => {
+      setIsAuthenticated(!!data.session);
+    });
+
+    // Escuchar cambios de autenticación en tiempo real
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+      // Si el usuario cierra sesión y está en una pestaña protegida, redirigir al mapa
+      if (!session && (activeTab === "subscribe" || activeTab === "my-alerts")) {
+        setActiveTab("map");
+      }
+    });
+
+    return () => subscription.unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleTabClick = (tab: Tab, isProtected: boolean) => {
+    if (isProtected && !isAuthenticated) {
+      // Si no está autenticado y la pestaña es protegida, redirigir a la cuenta
+      return;
+    }
+    setActiveTab(tab);
+  };
 
   // h-[100dvh] fuerza altura DEFINITIVA del viewport (no crece con
   // contenido, no depende de la resolución de % en cadena). Evita el
@@ -89,19 +125,36 @@ export default function Home() {
 
       {/* Tabs */}
       <nav className="flex gap-1 overflow-x-auto border-b border-border bg-surface px-2">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`whitespace-nowrap px-4 py-3 text-sm font-medium transition-colors ${
-              activeTab === tab.id
-                ? "tab-active"
-                : "text-textSecondary hover:text-textPrimary"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {ALL_TABS.map((tab) => {
+          const locked = tab.protected && !isAuthenticated;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => handleTabClick(tab.id, tab.protected)}
+              disabled={locked ?? false}
+              title={
+                locked
+                  ? "Inicia sesión con tu cuenta @digital.gob.es para acceder"
+                  : undefined
+              }
+              className={`group relative whitespace-nowrap px-4 py-3 text-sm font-medium transition-colors ${
+                isActive
+                  ? "tab-active"
+                  : locked
+                  ? "cursor-not-allowed text-textSecondary/30"
+                  : "text-textSecondary hover:text-textPrimary"
+              }`}
+            >
+              {tab.label}
+              {locked ? (
+                <span className="ml-1.5 text-[10px] text-textSecondary/40">
+                  🔒
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
       </nav>
 
       {/* Contenido. `flex flex-col` es CRÍTICO: sin que `<main>` sea un
@@ -122,9 +175,32 @@ export default function Home() {
         {activeTab === "map" ? (
           <TabMap onShowHistory={() => setActiveTab("history")} />
         ) : null}
-        {activeTab === "subscribe" ? <TabSubscribe /> : null}
-        {activeTab === "my-alerts" ? <TabMyAlerts /> : null}
+        {activeTab === "subscribe" && isAuthenticated ? <TabSubscribe /> : null}
+        {activeTab === "my-alerts" && isAuthenticated ? <TabMyAlerts /> : null}
         {activeTab === "history" ? <TabHistory /> : null}
+        {activeTab === "faq" ? <TabFAQ /> : null}
+
+        {/* Mensaje de login para pestañas protegidas cuando no hay sesión */}
+        {(activeTab === "subscribe" || activeTab === "my-alerts") &&
+          !isAuthenticated && (
+            <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center animate-fade-in">
+              <div className="text-4xl">🔒</div>
+              <h2 className="text-lg font-bold text-textPrimary">
+                Acceso restringido
+              </h2>
+              <p className="max-w-sm text-sm text-textSecondary">
+                Esta sección está disponible únicamente para usuarios con cuenta
+                institucional{" "}
+                <strong className="text-textPrimary">@digital.gob.es</strong>.
+              </p>
+              <Link
+                href="/dashboard"
+                className="mt-2 inline-flex h-10 items-center gap-2 rounded-xl bg-fire px-5 text-sm font-semibold text-white transition-colors hover:bg-fire/80"
+              >
+                Iniciar sesión →
+              </Link>
+            </div>
+          )}
       </main>
 
       {/* Footer */}

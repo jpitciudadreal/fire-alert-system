@@ -49,6 +49,10 @@ export function RegisterForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+      <div className="rounded-xl border border-fire/30 bg-fire/5 px-4 py-3 text-xs text-textSecondary">
+        ⚠️ <strong>Acceso restringido:</strong> Solo se permite el registro de cuentas de correo institucionales bajo el dominio <strong className="text-fire">@digital.gob.es</strong>.
+      </div>
+
       {!supabaseReady ? (
         <div className="border-amber/30 bg-amber/5 text-amber rounded-xl border px-4 py-3 text-sm">
           Supabase no está configurado en este entorno. El registro no
@@ -78,7 +82,7 @@ export function RegisterForm() {
           id="email"
           type="email"
           autoComplete="email"
-          placeholder="tu@correo.com"
+          placeholder="tu@digital.gob.es"
           invalid={Boolean(errors.email)}
           {...register("email")}
         />

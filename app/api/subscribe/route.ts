@@ -7,19 +7,23 @@ import { makeToken, verifyToken } from "@/lib/unsubscribe-token";
 import type { Subscription } from "@/types";
 
 /**
- * /api/subscribe — replica del endpoint de fire-alert-web, ahora contra
- * Supabase.
+ * /api/subscribe — endpoint de suscripciones contra Supabase.
  *
  *   GET    ?email=…                          → lista suscripciones del email
- *   POST   { email, province_id }            → crea (o recupera) suscripción
- *   DELETE ?token=…&email=…&province_slug=…  → baja por magic-link (HMAC)
+ *   POST   { email, province_id,             → crea (o recupera) suscripción
+ *            filter_confidence?,             →   "nominal" | "high" | null (ambas)
+ *            min_brightness? }              →   número en Kelvin (ej. 340) | null
+ *   DELETE ?token=…&email=…&province_slug=… → baja por magic-link (HMAC)
  *
- * El listado se hace siempre por email (no requiere login). El POST
- * tampoco requiere login — al igual que en fire-alert-web, los usuarios
- * pueden suscribirse anónimamente y recibir el magic-link por email
- * (en esta versión sin envío de email real, el token aparece en la
- * respuesta para que la UI lo muestre en pantalla / lo envíe a la
- * página `/unsubscribe` correspondiente).
+ * Flujo de confirmación (double opt-in):
+ *   - POST crea la fila con `confirmed: false`.
+ *   - Se envía (en producción) un email con enlace a /api/confirm-subscription?token=…
+ *   - El usuario hace clic → la fila se marca `confirmed: true`.
+ *   - check-fires solo envía alertas a suscripciones con `confirmed: true`.
+ *
+ * Excepción: si el usuario está autenticado con una sesión válida de Supabase
+ * Auth, la suscripción se confirma directamente (`confirmed: true`) sin
+ * necesitar el flujo de email, dado que el dominio ya está validado.
  */
 
 export async function GET(request: Request): Promise<Response> {
@@ -35,7 +39,6 @@ export async function GET(request: Request): Promise<Response> {
   const supabase = await createSupabaseServerClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any;
-  // Si Supabase no está configurado, mock-client devuelve { data: [], error }.
   const { data, error } = await sb
     .from("subscriptions")
     .select("*")
@@ -49,7 +52,12 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  let body: { email?: string; province_id?: string };
+  let body: {
+    email?: string;
+    province_id?: string;
+    filter_confidence?: "nominal" | "high" | null;
+    min_brightness?: number | null;
+  };
   try {
     body = await request.json();
   } catch {
@@ -73,13 +81,22 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
+  // Normalizar filtros opcionales
+  const filterConfidence =
+    body.filter_confidence === "high" || body.filter_confidence === "nominal"
+      ? body.filter_confidence
+      : null;
+  const minBrightness =
+    typeof body.min_brightness === "number" && body.min_brightness > 0
+      ? body.min_brightness
+      : null;
+
   const supabase = await createSupabaseServerClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any;
 
-  // Idempotente: si ya existe (email, province_slug) lo devolvemos en
-  // lugar de error 409 (más amable que la versión original de
-  // fire-alert-web, que devolvía error en ese caso).
+  // Idempotente: si ya existe (email, province_slug) lo devolvemos.
+  // Si los filtros han cambiado, actualizamos la fila existente.
   const { data: existing } = await sb
     .from("subscriptions")
     .select("*")
@@ -88,27 +105,40 @@ export async function POST(request: Request): Promise<Response> {
     .maybeSingle();
 
   if (existing) {
+    // Si cambian los filtros, los actualizamos
+    const needsUpdate =
+      existing.filter_confidence !== filterConfidence ||
+      existing.min_brightness !== minBrightness;
+    if (needsUpdate) {
+      await sb
+        .from("subscriptions")
+        .update({ filter_confidence: filterConfidence, min_brightness: minBrightness })
+        .eq("id", existing.id);
+    }
     return Response.json({
       ok: true,
-      subscription: existing as Subscription,
+      subscription: { ...existing, filter_confidence: filterConfidence, min_brightness: minBrightness },
       already_active: true,
     });
   }
 
-  // Si tenemos un usuario autenticado (caso Dashboard), le atamos la
-  // suscripción a su user_id. Si no, queda como anónima.
+  // Determinar si el usuario está autenticado → confirmar directamente
   let userId: string | null = null;
+  let isAuthenticatedUser = false;
   try {
     const { data: user } = await sb.auth.getUser();
-    userId = user?.user?.id ?? null;
+    if (user?.user?.id) {
+      userId = user.user.id;
+      isAuthenticatedUser = true;
+    }
   } catch {
     userId = null;
   }
 
-  // Calculamos el unsubscribe_token server-side como HMAC determinista
-  // de (email|province_slug) — mismo mecanismo que `verifyToken` validará
-  // en el DELETE. Esto evita el bug anterior donde la DB generaba bytes
-  // aleatorios y el verify esperaba un HMAC → unsubscribe nunca coincidía.
+  // Usuarios autenticados con sesión válida: confirmar directamente
+  // Usuarios anónimos: confirmed = false (requieren double opt-in por email)
+  const confirmed = isAuthenticatedUser;
+
   const unsubscribeToken = await makeToken(email, provinceSlug);
 
   const row = {
@@ -116,7 +146,9 @@ export async function POST(request: Request): Promise<Response> {
     province_slug: provinceSlug,
     province_name: province.name,
     user_id: userId,
-    confirmed: true,
+    confirmed,
+    filter_confidence: filterConfidence,
+    min_brightness: minBrightness,
     unsubscribe_token: unsubscribeToken,
   };
   const { data, error } = await sb
@@ -128,8 +160,6 @@ export async function POST(request: Request): Promise<Response> {
   if (error) {
     const msg = String(error.message ?? "");
     // En modo mock el cliente devuelve errores «Operación no soportada».
-    // En ese caso simulamos la inserción en memoria para que la UI
-    // pueda probarse offline.
     if (msg.includes("mock")) {
       const fakeId = `mock-${Date.now()}`;
       return Response.json({
@@ -140,18 +170,18 @@ export async function POST(request: Request): Promise<Response> {
           province_slug: provinceSlug,
           province_name: province.name,
           user_id: userId,
-          confirmed: true,
+          confirmed,
+          filter_confidence: filterConfidence,
+          min_brightness: minBrightness,
           created_at: new Date().toISOString(),
           unsubscribe_token: unsubscribeToken,
         } as Subscription & { unsubscribe_token: string },
         already_active: false,
         mock: true,
+        pending_confirmation: !confirmed,
       });
     }
-    // Race: dos POSTs concurrentes con la misma (email, province_slug)
-    // pueden saltarse el `maybeSingle` arriba y chocar en el INSERT.
-    // Postgres devuelve 23505 unique_violation. Resolvemos re-leyendo
-    // y marcando la fila como ya activa en lugar de propagar el 500.
+    // Race condition: dos POSTs concurrentes con la misma (email, province_slug)
     if (/23505|unique[_ ]violation|duplicate key/i.test(msg)) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sbRace = supabase as any;
@@ -180,6 +210,7 @@ export async function POST(request: Request): Promise<Response> {
     ok: true,
     subscription: data as Subscription & { unsubscribe_token?: string },
     already_active: false,
+    pending_confirmation: !confirmed,
   });
 }
 
@@ -202,10 +233,6 @@ export async function DELETE(request: Request): Promise<Response> {
   }
 
   // HMAC verified → safe to use the privileged service-role client.
-  // The public DELETE policy on `subscriptions` is closed (`using(false)`)
-  // to prevent anon-key enumeration of UUIDs, so the regular anon-key
-  // client would be rejected. Service-role bypasses RLS, which is fine
-  // because we already enforced ownership via the HMAC signature here.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = createSupabaseServiceRoleClient() as any;
   const { error } = await sb

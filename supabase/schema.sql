@@ -32,14 +32,22 @@ create table if not exists public.subscriptions (
   province_slug        varchar(64)  not null,
   province_name        varchar(120) not null,
   -- user_id opcional: si el suscriptor está autenticado, lo enlazamos.
-  -- La política RLS abra permite tanto inserts anónimos (TabSubscribe)
+  -- La política RLS abre permite tanto inserts anónimos (TabSubscribe)
   -- como autenticados (DashboardClient).
   user_id              uuid references auth.users(id) on delete set null,
   -- unsubscribe_token se rellena server-side desde `app/api/subscribe`
   -- con HMAC-SHA256(`${email}|${province_slug}`, UNSUB_SECRET). Por
   -- eso NO ponemos default aquí: la app lo gestiona, no la DB.
   unsubscribe_token    varchar(128),
-  confirmed            boolean      not null default true,
+  -- confirmed: false = pendiente de double opt-in por email.
+  --            true  = suscripción activa (recibe alertas).
+  -- Los usuarios autenticados (@digital.gob.es) se confirman directamente.
+  confirmed            boolean      not null default false,
+  -- Filtros opcionales del suscriptor:
+  -- filter_confidence: null = cualquier confianza, 'nominal' = nominal o alta, 'high' = solo alta
+  filter_confidence    varchar(16)  check (filter_confidence in ('nominal', 'high')),
+  -- min_brightness: umbral mínimo de temperatura de brillo (Kelvin). null = sin filtro.
+  min_brightness       double precision check (min_brightness > 0),
   created_at           timestamptz  not null default now(),
   updated_at           timestamptz  not null default now(),
 

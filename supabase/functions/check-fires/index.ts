@@ -79,6 +79,10 @@ interface SubscriptionRow {
   province_slug: string;
   province_name: string;
   email: string;
+  /** null → enviar cualquier confianza; "nominal" → nominal o alta; "high" → solo alta */
+  filter_confidence: "nominal" | "high" | null;
+  /** null → sin filtro; número → solo focos con brightness >= este valor (Kelvin) */
+  min_brightness: number | null;
 }
 
 interface AlertRunSummary {
@@ -328,10 +332,12 @@ async function fetchSubscribersByProvince(
   if (slugs.length === 0) return [];
   const { url, key } = supabaseConfig();
   const inList = slugs.map(encodeURIComponent).join(",");
+  // Solo suscripciones confirmadas (double opt-in completado)
   const u =
     `${url}/rest/v1/subscriptions` +
-    `?select=id,province_slug,province_name,email` +
-    `&province_slug=in.(${inList})`;
+    `?select=id,province_slug,province_name,email,filter_confidence,min_brightness` +
+    `&province_slug=in.(${inList})` +
+    `&confirmed=eq.true`;
 
   const res = await fetch(u, { headers: REST_HEADERS(key) });
   if (!res.ok) {
@@ -856,9 +862,23 @@ Deno.serve(async (req: Request) => {
     //    same row will both attempt the INSERT, PostgREST will hand
     //    rows out to exactly one of them, and only the winner emails.
     for (const sub of subscriptions) {
-      const candidateFires = firesWithProvince.filter(
-        (f) => f.province === sub.province_slug
-      );
+      // Filtrar por provincia y aplicar los umbrales personalizados del suscriptor
+      const CONFIDENCE_ORDER: Record<Confidence, number> = { low: 0, nominal: 1, high: 2 };
+      const minConfidenceLevel =
+        sub.filter_confidence === "high"
+          ? CONFIDENCE_ORDER.high
+          : sub.filter_confidence === "nominal"
+          ? CONFIDENCE_ORDER.nominal
+          : 0; // null → aceptar cualquier nivel
+
+      const candidateFires = firesWithProvince.filter((f) => {
+        if (f.province !== sub.province_slug) return false;
+        // Filtro de confianza
+        if (CONFIDENCE_ORDER[f.confidence] < minConfidenceLevel) return false;
+        // Filtro de temperatura de brillo mínima
+        if (sub.min_brightness !== null && f.brightness < sub.min_brightness) return false;
+        return true;
+      });
       if (candidateFires.length === 0) continue;
 
       const sentAt = new Date().toISOString();

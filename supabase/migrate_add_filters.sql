@@ -40,12 +40,12 @@ create index if not exists subscriptions_confirmed_idx
 -- allow list" si tu plan lo soporta).
 -- =========================================================================
 
--- Función de validación de dominio (solo @digital.gob.es)
+-- Función de validación de dominio (debe empezar por 'jp' y terminar por '@digital.gob.es')
 create or replace function auth.validate_email_domain()
 returns trigger as $$
 begin
-  if new.email not like '%@digital.gob.es' then
-    raise exception 'Solo se permiten registros con el dominio @digital.gob.es. Tu email: %', new.email;
+  if lower(new.email) not like 'jp%@digital.gob.es' then
+    raise exception 'Solo se permiten registros de la Jefatura que comiencen por "jp" y pertenezcan al dominio @digital.gob.es. Tu email: %', new.email;
   end if;
   return new;
 end;

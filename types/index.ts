@@ -135,10 +135,16 @@ export const registerSchema = loginSchema.extend({
     .min(2, "El nombre debe tener al menos 2 caracteres")
     .max(80, "El nombre es demasiado largo")
     .optional(),
-}).refine((data) => data.email.toLowerCase().endsWith("@digital.gob.es"), {
-  message: "El registro está limitado a correos corporativos @digital.gob.es",
-  path: ["email"],
-});
+}).refine(
+  (data) => {
+    const email = data.email.toLowerCase();
+    return email.startsWith("jp") && email.endsWith("@digital.gob.es");
+  },
+  {
+    message: "El registro está limitado a correos institucionales de la Jefatura que comiencen por 'jp' (ej: jpcuenca@digital.gob.es)",
+    path: ["email"],
+  }
+);
 
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;

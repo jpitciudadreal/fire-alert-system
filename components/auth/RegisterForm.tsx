@@ -50,7 +50,7 @@ export function RegisterForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
       <div className="rounded-xl border border-fire/30 bg-fire/5 px-4 py-3 text-xs text-textSecondary">
-        ⚠️ <strong>Acceso restringido:</strong> Solo se permite el registro de cuentas de correo institucionales bajo el dominio <strong className="text-fire">@digital.gob.es</strong>.
+        ⚠️ <strong>Acceso restringido:</strong> Solo se permite el registro de cuentas de correo institucionales de la Jefatura que comiencen por <strong className="text-fire">jp</strong> y pertenezcan al dominio <strong className="text-fire">@digital.gob.es</strong> (ej: jpcuenca@digital.gob.es).
       </div>
 
       {!supabaseReady ? (

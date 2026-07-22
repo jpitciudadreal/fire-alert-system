@@ -222,6 +222,11 @@ export default function FireMap({
                   <div>
                     <strong>Intensidad:</strong> {fire.brightness.toFixed(1)} K
                   </div>
+                  {fire.frp > 0 && (
+                    <div>
+                      <strong>Potencia (FRP):</strong> {fire.frp.toFixed(1)} MW
+                    </div>
+                  )}
                   {fire.province ? (
                     <div>
                       <strong>Provincia:</strong>{" "}

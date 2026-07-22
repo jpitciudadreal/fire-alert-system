@@ -41,6 +41,7 @@ type Tab = (typeof ALL_TABS)[number]["id"];
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("map");
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -48,6 +49,7 @@ export default function Home() {
     // Comprobación inicial de sesión
     supabase.auth.getSession().then(({ data }) => {
       setIsAuthenticated(!!data.session);
+      setUserEmail(data.session?.user?.email ?? null);
     });
 
     // Escuchar cambios de autenticación en tiempo real
@@ -55,6 +57,7 @@ export default function Home() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsAuthenticated(!!session);
+      setUserEmail(session?.user?.email ?? null);
       // Si el usuario cierra sesión y está en una pestaña protegida, redirigir al mapa
       if (!session && (activeTab === "subscribe" || activeTab === "my-alerts")) {
         setActiveTab("map");
@@ -114,6 +117,11 @@ export default function Home() {
           <span className="hidden font-mono text-xs text-textSecondary sm:inline">
             NASA FIRMS · VIIRS NRT
           </span>
+          {userEmail && (
+            <span className="hidden font-mono text-xs text-textPrimary md:inline ml-2">
+              {userEmail}
+            </span>
+          )}
           <Link
             href="/dashboard"
             className="ml-3 rounded-lg border border-border px-2.5 py-1 text-xs text-textSecondary transition-colors hover:border-fire hover:text-fire"

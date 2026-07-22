@@ -2,7 +2,9 @@
 
 import dynamic from "next/dynamic";
 import type { ComponentType } from "react";
-import type { FireMapProps, FireMapHeight, FireMapView } from "./FireMap";
+import type { FireMapProps, FireMapHeight } from "./FireMap";
+
+export type FireMapView = "dark" | "satellite" | "streets" | "relief";
 
 /**
  * Client wrapper que difiere la carga del mapa Leaflet hasta que el

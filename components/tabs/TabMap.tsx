@@ -238,29 +238,21 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
             </div>
 
             {/*
-              Toggle de capa base (dark ↔ satellite). El texto del botón
-              cambia para reflejar la ACCIÓN disponible ("Satélite"
-              cuando estás en dark ⇒ "ir a satélite"; "Mapa" cuando
-              estás en satellite ⇒ "volver al mapa"). El emoji ayuda a
-              identificar visualmente la capa destino sin abrir tooltips.
+              Selector de capas base (Oscuro, Satélite, Calles, Relieve).
             */}
-            <button
-              type="button"
-              onClick={() => setView(view === "dark" ? "satellite" : "dark")}
-              title={
-                view === "dark"
-                  ? "Cambiar a vista satélite"
-                  : "Volver a mapa político"
-              }
-              aria-label={
-                view === "dark"
-                  ? "Cambiar a vista satélite"
-                  : "Volver a mapa político"
-              }
-              className="rounded-lg border border-border bg-surface/90 px-3 py-1.5 font-mono text-xs text-textSecondary transition-colors hover:border-fire hover:text-textPrimary"
-            >
-              {view === "dark" ? "🛰️ Satélite" : "🗺️ Mapa"}
-            </button>
+            <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface/90 px-3 py-1.5 text-xs text-textSecondary">
+              <span className="font-mono">Capa:</span>
+              <select
+                value={view}
+                onChange={(e) => setView(e.target.value as any)}
+                className="bg-transparent text-textPrimary outline-none cursor-pointer font-semibold font-mono"
+              >
+                <option value="satellite" className="bg-surface">🛰️ Satélite</option>
+                <option value="dark" className="bg-surface">🌌 Oscuro</option>
+                <option value="streets" className="bg-surface">🗺️ Calles</option>
+                <option value="relief" className="bg-surface">⛰️ Relieve</option>
+              </select>
+            </div>
 
             <button
               onClick={load}

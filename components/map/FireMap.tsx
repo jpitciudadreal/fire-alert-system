@@ -36,7 +36,7 @@ export type FireMapHeight = number | "fill";
  * el resto del state del mapa (zoom, position, markers) gracias a
  * que la instancia del mapa persiste entre renders.
  */
-export type FireMapView = "dark" | "satellite";
+export type FireMapView = "dark" | "satellite" | "streets" | "relief";
 
 export interface FireMapProps {
   fires: FirePoint[];
@@ -48,11 +48,6 @@ export interface FireMapProps {
 
 const SPAIN_CENTER: [number, number] = [39.8, -3.5];
 
-/**
- * Configuración por capa base. Centralizado aquí para que añadir
- * una tercera vista (`topo`, `terrain`, ...) sea trivial — sólo se
- * añade una entrada a este record y se documenta la atribución.
- */
 const BASE_LAYERS: Record<
   FireMapView,
   { url: string; attribution: string; maxZoom: number }
@@ -66,8 +61,20 @@ const BASE_LAYERS: Record<
   satellite: {
     url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     attribution:
-      'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS Community',
+      'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
     maxZoom: 19,
+  },
+  streets: {
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  },
+  relief: {
+    url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+    attribution:
+      'Kartendaten: &copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Kartendarstellung: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)',
+    maxZoom: 17,
   },
 };
 

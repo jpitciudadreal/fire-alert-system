@@ -2,6 +2,8 @@ import { getFires } from "@/lib/firms/client";
 import { detectProvince } from "@/lib/data/provinces";
 import type { FireResponse, FirePoint } from "@/types";
 
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/fires
  *

@@ -130,8 +130,7 @@ async function fetchFiresFromFirms(): Promise<FirePoint[]> {
 
     try {
       const res = await fetch(url, {
-        // Re-fetch at most every hour
-        next: { revalidate: 60 * 60 },
+        cache: "no-store",
         headers: { Accept: "text/csv" },
       });
 

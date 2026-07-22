@@ -147,10 +147,11 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
   // Mantén la lista completa para el mapa (los markers pintan tanto
   // los 200 de fuera de temporada como los 500 de temporada alta — el
   // aside sólo necesita los RECENT_COUNT más recientes).
+  // Ordena por mayor potencia (FRP) de forma descendente y saca el top 10
   const recentFires = useMemo(
     () =>
       [...firesToday]
-        .sort((a, b) => sortKey(b).localeCompare(sortKey(a)))
+        .sort((a, b) => (b.frp || 0) - (a.frp || 0))
         .slice(0, RECENT_COUNT),
     [firesToday],
   );
@@ -352,7 +353,7 @@ export default function TabMap({ onShowHistory }: TabMapProps = {}) {
                   Focos activos
                 </h2>
                 <span className="font-mono text-[10px] uppercase tracking-wider text-textSecondary">
-                  Top {RECENT_COUNT} recientes
+                  Top {RECENT_COUNT} potencia (FRP)
                 </span>
               </div>
             </div>

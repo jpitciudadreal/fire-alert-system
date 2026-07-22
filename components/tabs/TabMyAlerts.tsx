@@ -1,17 +1,7 @@
-"use client";
-
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { getProvince } from "@/lib/provinces";
 import type { FirePoint, FireResponse } from "@/types";
-
-/**
- * Tab "Mis alertas" — réplica de `fire-alert-web/components/TabMyAlerts.tsx`.
- *
- * Conectado a Supabase via `/api/subscribe` (GET). El POST/DELETE se
- * hace desde aquí con el magic-link HMAC que el server devuelve en
- * `subscription.unsubscribe_token` (ya no hace falta regenerar en
- * cliente: el token ES el HMAC calculado server-side en el POST).
- */
+import { useSupabase } from "@/components/Providers";
 
 interface Subscription {
   id: string;
@@ -28,8 +18,6 @@ interface Subscription {
 
 function buildUnsubUrl(sub: Subscription): string | null {
   if (!sub.unsubscribe_token) return null;
-  // Construcción en navegador: window es seguro aquí porque el effect
-  // se ejecuta client-side.
   if (typeof window === "undefined") return null;
   const base = window.location.origin;
   return `${base}/unsubscribe?token=${encodeURIComponent(
@@ -40,6 +28,7 @@ function buildUnsubUrl(sub: Subscription): string | null {
 }
 
 export default function TabMyAlerts() {
+  const supabase = useSupabase();
   const [email, setEmail] = useState("");
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -47,19 +36,18 @@ export default function TabMyAlerts() {
   const [fires, setFires] = useState<FirePoint[]>([]);
   const [removing, setRemoving] = useState<string | null>(null);
 
-  const search = useCallback(async () => {
-    if (!email) return;
+  const search = useCallback(async (targetEmail: string) => {
+    if (!targetEmail) return;
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/subscribe?email=${encodeURIComponent(email.trim().toLowerCase())}`,
+        `/api/subscribe?email=${encodeURIComponent(targetEmail.trim().toLowerCase())}`,
       );
       const data = (await res.json()) as { subscriptions: Subscription[] };
       const list = data.subscriptions ?? [];
       setSubs(list);
       setSearched(true);
 
-      // Carga paralela de focos para mostrar live-status por suscripción.
       if (list.length > 0) {
         const r = await fetch("/api/fires?limit=200", { cache: "no-store" });
         const d = (await r.json()) as FireResponse;
@@ -72,7 +60,18 @@ export default function TabMyAlerts() {
     } finally {
       setLoading(false);
     }
-  }, [email]);
+  }, []);
+
+  useEffect(() => {
+    const init = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (data?.user?.email) {
+        setEmail(data.user.email);
+        search(data.user.email);
+      }
+    };
+    init();
+  }, [supabase, search]);
 
   const unsubscribe = async (sub: Subscription) => {
     const url = buildUnsubUrl(sub);
@@ -110,32 +109,9 @@ export default function TabMyAlerts() {
   return (
     <div className="mx-auto max-w-3xl animate-fade-in p-6 sm:p-8 h-full overflow-y-auto">
       <h1 className="mb-2 text-2xl font-bold text-textPrimary">Mis alertas</h1>
-      <p className="mb-8 text-sm text-textSecondary sm:text-base">
-        Introduce tu email para ver y gestionar tus suscripciones activas.
+      <p className="mb-6 text-sm text-textSecondary sm:text-base">
+        Estas son tus suscripciones activas vinculadas a tu cuenta institucional <strong className="text-fire font-mono">{email}</strong>.
       </p>
-
-      <div className="mb-8 rounded-2xl border border-border bg-surface p-6">
-        <div className="flex gap-3">
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              setSearched(false);
-            }}
-            onKeyDown={(e) => e.key === "Enter" && search()}
-            placeholder="tu@email.com"
-            className="flex-1 rounded-lg border border-border bg-base px-4 py-2.5 font-mono text-sm text-textPrimary placeholder:text-textSecondary/50 outline-none transition-colors focus:border-fire"
-          />
-          <button
-            onClick={search}
-            disabled={!email || loading}
-            className="whitespace-nowrap rounded-lg bg-fire px-5 py-2.5 text-sm font-semibold text-textPrimary transition-colors hover:bg-fire/80 disabled:bg-fire/30"
-          >
-            {loading ? "..." : "Buscar"}
-          </button>
-        </div>
-      </div>
 
       {searched ? (
         <div className="animate-fade-in">

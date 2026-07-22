@@ -1,7 +1,6 @@
-"use client";
-
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { groupByComunidad, type Province } from "@/lib/provinces";
+import { useSupabase } from "@/components/Providers";
 
 interface SuccessResponse {
   ok: true;
@@ -24,6 +23,7 @@ type State = "idle" | "loading" | "ok" | "error";
 
 export default function TabSubscribe() {
   const GROUPS = useMemo(() => groupByComunidad(), []);
+  const supabase = useSupabase();
   const [email, setEmail] = useState("");
   const [provinceId, setProvinceId] = useState("");
   const [filterConfidence, setFilterConfidence] = useState<"nominal" | "high" | "">("");
@@ -32,6 +32,16 @@ export default function TabSubscribe() {
   const [state, setState] = useState<State>("idle");
   const [message, setMessage] = useState("");
   const [unsubUrl, setUnsubUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (data?.user?.email) {
+        setEmail(data.user.email);
+      }
+    };
+    fetchUser();
+  }, [supabase]);
 
   const handleSubmit = async () => {
     if (!email || !provinceId) return;
@@ -164,15 +174,15 @@ export default function TabSubscribe() {
           <div className="space-y-4">
             <div>
               <label className="mb-1.5 block font-mono text-xs uppercase tracking-wide text-textSecondary">
-                Email
+                Email destinatario
               </label>
               <input
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="tu@email.com"
-                disabled={state === "loading"}
-                className="w-full rounded-lg border border-border bg-base px-4 py-3 font-mono text-sm text-textPrimary placeholder:text-textSecondary/50 outline-none transition-colors focus:border-fire"
+                readOnly
+                disabled
+                placeholder="Cargando cuenta institucional..."
+                className="w-full rounded-lg border border-border bg-base/50 px-4 py-3 font-mono text-sm text-textSecondary/80 cursor-not-allowed outline-none"
               />
             </div>
 

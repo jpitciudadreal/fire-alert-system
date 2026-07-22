@@ -230,7 +230,7 @@ export default function Home() {
         
         {/* Powered by */}
         <div className="text-center font-sans text-[11px] leading-tight text-textSecondary">
-          Powered by <span className="font-semibold text-textPrimary">JPIT Ciudad Real</span>
+          Powered by <span className="font-semibold text-textPrimary">JPIT</span>
         </div>
 
         <span className="text-right text-[11px] text-textSecondary">

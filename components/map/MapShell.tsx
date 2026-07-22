@@ -1,10 +1,6 @@
-"use client";
-
 import dynamic from "next/dynamic";
 import type { ComponentType } from "react";
-import type { FireMapProps, FireMapHeight } from "./FireMap";
-
-export type FireMapView = "dark" | "satellite" | "streets" | "relief";
+import type { FireMapProps, FireMapHeight, FireMapView } from "./FireMap";
 
 /**
  * Client wrapper que difiere la carga del mapa Leaflet hasta que el
@@ -43,10 +39,5 @@ function MapShellSkeleton() {
   );
 }
 
-// Re-exports públicos: los consumidores importan la API desde MapShell
-// (fachada) en lugar de desde FireMap (que es interno). Importante:
-// `export type { ... }` aquí (sin `from`) reusa los bindings ya en
-// scope gracias al `import type` de arriba. Si hubiera usado
-// `export type { X } from "./FireMap"` (pass-through), `X` no estaría
-// disponible como local y TS fallaría en la línea 16.
+// Re-exports públicos
 export type { FireMapProps, FireMapHeight, FireMapView };

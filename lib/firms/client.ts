@@ -35,14 +35,12 @@ function isInSpain(lat: number, lng: number): boolean {
 }
 
 /** How many days back to look for active fires (max 10 for NRT) */
-const FIRMS_DAYS = 3;
+const FIRMS_DAYS = 2;
 
-/** Fuentes de satélites que se consultarán en paralelo */
+/** Fuentes de satélites que se consultarán en paralelo (VIIRS de alta resolución) */
 const FIRMS_SOURCES = [
   "VIIRS_SNPP_NRT",
-  "VIIRS_NOAA20_NRT",
-  "VIIRS_NOAA21_NRT",
-  "MODIS_NRT"
+  "VIIRS_NOAA20_NRT"
 ];
 
 /**

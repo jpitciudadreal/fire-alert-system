@@ -212,11 +212,28 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="flex items-center justify-between border-t border-border bg-surface px-4 py-2">
-        <span className="font-mono text-xs text-textSecondary">
-          Datos: NASA FIRMS / VIIRS S-NPP NRT · actualización cada ~3h
-        </span>
-        <span className="text-xs text-textSecondary">
+      <footer className="flex flex-col gap-2 border-t border-border bg-surface px-4 py-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-1.5 md:flex-row md:items-center md:gap-4">
+          <span className="font-mono text-[11px] text-textSecondary">
+            Datos: NASA FIRMS / VIIRS S-NPP NRT · actualización cada ~3h
+          </span>
+          <div className="flex items-center gap-1 text-[11px]">
+            <span className="text-textSecondary">⚠️</span>
+            <a
+              href="mailto:jpitalertasmeteorologicas@gmail.com?subject=App%20Alertas%20Incendios%20-"
+              className="text-textSecondary underline transition-colors hover:text-fire"
+            >
+              Reportar incidencia/mejora
+            </a>
+          </div>
+        </div>
+        
+        {/* Powered by */}
+        <div className="text-center font-sans text-[11px] leading-tight text-textSecondary">
+          Powered by <span className="font-semibold text-textPrimary">JPIT Ciudad Real</span>
+        </div>
+
+        <span className="text-right text-[11px] text-textSecondary">
           Emergencias: <span className="font-bold text-fire">112</span>
         </span>
       </footer>

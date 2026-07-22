@@ -141,7 +141,7 @@ export const registerSchema = loginSchema.extend({
     return email.startsWith("jp") && email.endsWith("@digital.gob.es");
   },
   {
-    message: "El registro está limitado a correos institucionales de la Jefatura que comiencen por 'jp' (ej: jpcuenca@digital.gob.es)",
+    message: "El registro está limitado a correos institucionales de la Jefatura que comiencen por 'jp'",
     path: ["email"],
   }
 );
